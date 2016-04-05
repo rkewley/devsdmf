@@ -19,3 +19,5 @@ its flexibility to deploy actors in a single Java Virtual
 Machine to scale up, or to deploy actors to different containers
 in the cloud to scale out.
 
+This project allows the creation of DEVS DMF simulation models.  See the project at https://github.com/rkewley/beanhold for an example simulation created using this system.
+

@@ -70,8 +70,8 @@ case class ReadyToProcessMessages(t: Duration)
 case class EventMessage[E <: Serializable](event: ExternalEvent[E], t: Duration, eventIndex: Long)
 
 /**
- * Message telling the [[ModelSimulator]] to execute the next [[ModelSimulator.DEVSModel.externalStateTransition()]], [[ModelSimulator.DEVSModel.internalStateTransition()]]
- *   or [[ModelSimulator.DEVSModel.confluentStateTransition()]]
+ * Message telling the [[ModelSimulator]] to execute the next [[ModelSimulator.DEVSModel.externalStateTransition]], [[ModelSimulator.DEVSModel.internalStateTransition]]
+ *   or [[ModelSimulator.DEVSModel.confluentStateTransition]]
  * @param t  The time of the state transition
  */
 case class ExecuteTransition(t: Duration)
@@ -141,9 +141,9 @@ case class Terminate()
 case class TerminateDone()
 
 /**
-  * Class representing a single state variable in the model's [[]ModelState]].  [[]DynamicStateVariable]]s can change
+  * Class representing a single state variable in the model's [[ModelState]].  [[DynamicStateVariable]]s can change
   * as the DEVSModel executes over time
-  * @param timeInState The last time this [[]DynamicStateVariable]] changed its value
+  * @param timeInState The last time this [[DynamicStateVariable]] changed its value
   * @param state The value of the state
   * @tparam T The data type of the state
   */
@@ -223,7 +223,7 @@ abstract class ModelStateManager[S <: ModelState](initialState: S) {
 
 /**
   * Abstract class representing events that can be executed by the [[ModelSimulator.DEVSModel]].  This class provides a default
-  * [[compare]] method that first compares by executionTime and then by a [[hashCode()]].  This is a naive
+  * [[compare]] method that first compares by executionTime and then by a [[hashCode]].  This is a naive
   * implementation of the notion of a super dense event schedule in which each instant of time can also have a large
   * number of events which themselves are ordered.  This ordering permits a consistent application of pulling the
   * next event from a schedule, even if the two events are scheduled for the same time.
@@ -245,7 +245,7 @@ abstract class DEVSEvent[E <: Serializable](val executionTime: Duration, val eve
 
 /**
   * Abstract class representing an external event sent to the [[ModelSimulator.DEVSModel]].  An ExternalEvent will result in a
-  * call to the [[ModelSimulator.DEVSModel.externalStateTransition()]]
+  * call to the [[ModelSimulator.DEVSModel.externalStateTransition]]
   * @param executionTime  Time the event is executed
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
@@ -253,7 +253,7 @@ abstract class DEVSEvent[E <: Serializable](val executionTime: Duration, val eve
 class ExternalEvent[E <: Serializable](override val executionTime: Duration, override val eventData: E) extends DEVSEvent[E](executionTime, eventData)
 
 /**
-  * Abstract class representing an internal event within the [[]DEVSModel]].  An InternalEvent will result in a
+  * Abstract class representing an internal event within the [[DEVSModel]].  An InternalEvent will result in a
   * call to the [[ModelSimulator.DEVSModel#internalStateTranstion]].  From the perspective of the DEVS formalism, all the InternalEvents on the event
   * schedule are part of the internal state of the model.
   * @param aTime  Time the event is executed
@@ -328,8 +328,8 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
   private def getCurrentTime = devs.currentTime
 
   /**
-   * A convenience functioin to get the time of the next [[DEVSModel.internalStateTransition()]]
-   * @return The time of the next [[DEVSModel.internalStateTransition()]]
+   * A convenience functioin to get the time of the next [[DEVSModel.internalStateTransition]]
+   * @return The time of the next [[DEVSModel.internalStateTransition]]
    */
   private def getNextTime = devs.getNextTime
 
@@ -371,14 +371,25 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
 
   /**
    * Receive method that handle external messages to execute the [[DEVSModel]].
+   * Call [[processSimulationMessages]] for DEVs related messages, or, if
+   * unhandled, [[processStateTransitionMessages]] on DEVModel for model related
+   * messages.
+   */
+  def executeSimulation: Receive = {
+    processSimulationMessages orElse devs.processStateTransitionMessages
+  }
+
+
+  /**
+   * Receive method that handle external messages to execute the [[DEVSModel]].
    * Upon receipt of a [[GetNextTime]] message during simulation initialization, respond with a [[NextTime]] message
    *   that contains the result of [[getNextTime]]
    * Upon receipt of a [[GenerateOutput]] message, call the output function and send output message to parent
    * Upon receipt of an [[EventMessage]], add the message to the [[externalEvents]] list
-   * Upon receipt of an [[ExecuteTransition]] message, execute the [[DEVSModel.externalStateTransition()]],
-   *   [[DEVSModel.internalStateTransition()]], or [[DEVSModel.confluentStateTransition()]] as required
+   * Upon receipt of an [[ExecuteTransition]] message, execute the [[DEVSModel.externalStateTransition]],
+   *   [[DEVSModel.internalStateTransition]], or [[DEVSModel.confluentStateTransition]] as required
    */
-  def executeSimulation: Receive = {
+  def processSimulationMessages: Receive = {
 
     case GetNextTime() =>
       logDebug(getCurrentTime + " Received GetNextTime.  Sending " + getNextTime + " to parent.")
@@ -520,12 +531,17 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
     val sim = self
 
     /**
+      * A [[ActorContext]] reference to the context for the enclosing [[ModelSimulator]] so that implementing traits can use it
+      */
+    val simContext = context
+
+    /**
       * This method must be overriden in a subclass to set the value of the [[randomProperties]] object
       */
     def initializeRandomProperties: Unit
 
     /**
-      * A utility method to turn debugging on and off in the [[LoggingActor]]
+      * A utility method to turn debugging on and off in the [[simutils.LoggingActor]]
       * @param d Set true to enable debug logging
       */
     def setDebug(d: Boolean): Unit = {
@@ -556,7 +572,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
     }
 
     /**
-      * Utility method called upon completion of [[internalStateTransition()]] to have the enclosing [[ModelSimulator]]
+      * Utility method called upon completion of [[internalStateTransition]] to have the enclosing [[ModelSimulator]]
       * to send an [[InternalTransitionDone]] to its parent [[ModelCoordinator]]
       * @param t The time of the event transition
       */
@@ -566,7 +582,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
     }
 
     /**
-      * Utility method called upon completion of [[externalStateTransition()]] to have the enclosing [[ModelSimulator]]
+      * Utility method called upon completion of [[externalStateTransition]] to have the enclosing [[ModelSimulator]]
       * to send an [[ExternalTransitionDone]] to its parent [[ModelCoordinator]]
       * @param t The time of the event transition
       */
@@ -666,7 +682,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
 
     /**
      * The confluent transition function is applied when an [[ExternalEvent]] is received at the same time that an
-     * [[internalStateTransition]] is to occur.  The default behavior, encoded here, is to apply the [[internalStateTransition()]]
+     * [[internalStateTransition]] is to occur.  The default behavior, encoded here, is to apply the [[internalStateTransition]]
      * The model will still be imminent because it has an internal event scheduled for the current time, so that
      * will be called next.  This may be overridden to define an explicit confluent transition function.  If overridden, the
      * confluent state transition must send a [[ConfluentTransitionDone]] message to the enclosing [[ModelSimulator]]
@@ -702,6 +718,8 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
       sim ! OutputDone(t)
     }
 
+    def processStateTransitionMessages: Receive = {
+      case _ =>
+    }
   }
-
 }

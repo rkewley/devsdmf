@@ -50,7 +50,7 @@ case class StartSimulation()
 
 /**
   * This class is the parent class of all simulations.  Its main functions are to manage time advance for the simulation,
-  * create the [[SplitStreamActor]] to enable parallel random numbers, and commuicate with the [[SimLogger]] so that
+  * create the [[simutils.random.SplitStreamActor]] to enable parallel random numbers, and commuicate with the [[SimLogger]] so that
   * it can keep track of the simulation cloack for logging.
   * @param initialTime The initial time of the simulation
   * @param stopTime The stop time of the simulation

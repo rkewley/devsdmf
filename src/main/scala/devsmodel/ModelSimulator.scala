@@ -147,13 +147,13 @@ case class TerminateDone()
   * @param state The value of the state
   * @tparam T The data type of the state
   */
-case class DynamicStateVariable[T <: Serializable](timeInState: Duration, state: T)
+case class DynamicStateVariable[T](timeInState: Duration, state: T)
 
 
 /**
   * Abstract class representing the static properties of the model that does not change over the execution of the simulation
   */
-abstract class ModelProperties extends Serializable
+abstract class ModelProperties 
 
 /**
   * Abstract class representing random properties of a model.  A random property is a property that is randomly
@@ -170,7 +170,7 @@ case class RandomProperties()
   * Abstract class representing the dynamic state of the model that changes over execution of the simulation.
   * This class is intended to contain all of the [[ModelSimulator.DEVSModel]]'s [[DynamicStateVariable]]s
   */
-abstract class ModelState extends Serializable
+abstract class ModelState 
 
 /**
   * All internal state of a [[ModelSimulator.DEVSModel]] is accessed and maintained by this object.  It contains
@@ -214,7 +214,7 @@ abstract class ModelStateManager[S <: ModelState](initialState: S) {
     * @tparam T The data type of the state variable
     * @return The manager for the variable state.
     */
-  def buildSimEntityState[T <: Serializable](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
+  def buildSimEntityState[T](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
     val stateTrajectory = new TreeMap[Duration, T] + (initialState.timeInState -> initialState.state)
     new SimEntityState[T](stateTrajectory, name)
   }
@@ -274,7 +274,7 @@ class OutputEvent[E <: Serializable](aTime: Duration, override val eventData: E)
   * A class that holds the initial events passed into a ModelSimulator at initialization
   * @param internalEvents A list of internal events to be scheduled
   */
-case class InitialEvents(internalEvents: List[DEVSEvent[_ <: Serializable]]) extends Serializable
+case class InitialEvents(internalEvents: List[DEVSEvent[_ <: Serializable]]) 
 
 
 

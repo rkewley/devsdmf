@@ -8,10 +8,10 @@ scalaVersion := "2.11.6"
 
 libraryDependencies ++= Seq(
   "org.scala-lang" % "scala-reflect" % scalaVersion.value,
-  "com.typesafe.akka" %% "akka-remote" % "2.3.11",
-  "com.typesafe.akka" %% "akka-actor" % "2.3.11",
-  "com.typesafe.akka" %% "akka-testkit" % "2.3.11",
-  "com.typesafe.akka" % "akka-slf4j_2.11" % "2.3.11",
+  "com.typesafe.akka" %% "akka-remote" % "2.4.7",
+  "com.typesafe.akka" %% "akka-actor" % "2.4.7",
+  "com.typesafe.akka" %% "akka-testkit" % "2.4.7",
+  "com.typesafe.akka" % "akka-slf4j_2.11" % "2.4.7",
   "ch.qos.logback" % "logback-classic" % "1.1.3",
   "org.scalatest" %% "scalatest" % "2.2.4" % "test",
   "junit" % "junit" % "4.12" % "test",

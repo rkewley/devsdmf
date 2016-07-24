@@ -147,13 +147,13 @@ case class TerminateDone()
   * @param state The value of the state
   * @tparam T The data type of the state
   */
-case class DynamicStateVariable[T](timeInState: Duration, state: T)
+case class DynamicStateVariable[T <: Serializable](timeInState: Duration, state: T)
 
 
 /**
   * Abstract class representing the static properties of the model that does not change over the execution of the simulation
   */
-abstract class ModelProperties 
+abstract class ModelProperties extends Serializable
 
 /**
   * Abstract class representing random properties of a model.  A random property is a property that is randomly
@@ -170,7 +170,7 @@ case class RandomProperties()
   * Abstract class representing the dynamic state of the model that changes over execution of the simulation.
   * This class is intended to contain all of the [[ModelSimulator.DEVSModel]]'s [[DynamicStateVariable]]s
   */
-abstract class ModelState 
+abstract class ModelState extends Serializable
 
 /**
   * All internal state of a [[ModelSimulator.DEVSModel]] is accessed and maintained by this object.  It contains
@@ -214,7 +214,7 @@ abstract class ModelStateManager[S <: ModelState](initialState: S) {
     * @tparam T The data type of the state variable
     * @return The manager for the variable state.
     */
-  def buildSimEntityState[T](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
+  def buildSimEntityState[T <: Serializable](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
     val stateTrajectory = new TreeMap[Duration, T] + (initialState.timeInState -> initialState.state)
     new SimEntityState[T](stateTrajectory, name)
   }
@@ -231,7 +231,7 @@ abstract class ModelStateManager[S <: ModelState](initialState: S) {
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
   */
-abstract class DEVSEvent[E <: Serializable](val executionTime: Duration, val eventData: E) extends Ordered[DEVSEvent[_ <: Serializable]] {
+abstract class DEVSEvent[E <: Serializable](val executionTime: Duration, val eventData: E) extends Ordered[DEVSEvent[_ <: Serializable]] with Serializable {
 
   override def compare(anotherEvent: DEVSEvent[_ <: Serializable]): Int = {
     val durationCompare =  this.executionTime.compareTo(anotherEvent.executionTime)
@@ -250,7 +250,7 @@ abstract class DEVSEvent[E <: Serializable](val executionTime: Duration, val eve
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
   */
-class ExternalEvent[E <: Serializable](override val executionTime: Duration, override val eventData: E) extends DEVSEvent[E](executionTime, eventData)
+class ExternalEvent[E <: Serializable](override val executionTime: Duration, override val eventData: E) extends DEVSEvent[E](executionTime, eventData) with Serializable
 
 /**
   * Abstract class representing an internal event within the [[DEVSModel]].  An InternalEvent will result in a
@@ -260,7 +260,7 @@ class ExternalEvent[E <: Serializable](override val executionTime: Duration, ove
   * @param anEvent  The data for the event
   * @tparam E  The data type for the eventData
   */
-class InternalEvent[E <: Serializable](aTime: Duration, anEvent: E) extends DEVSEvent(aTime, anEvent)
+class InternalEvent[E <: Serializable](aTime: Duration, anEvent: E) extends DEVSEvent(aTime, anEvent) with Serializable
 
 /**
   * Abstract class that is scheduled in order to produce an output of the [[ModelSimulator.DEVSModel]]
@@ -268,13 +268,13 @@ class InternalEvent[E <: Serializable](aTime: Duration, anEvent: E) extends DEVS
   * @param eventData The data sent as output from the model
   * @tparam E  The data type for the eventData
   */
-class OutputEvent[E <: Serializable](aTime: Duration, override val eventData: E) extends DEVSEvent(aTime, eventData)
+class OutputEvent[E <: Serializable](aTime: Duration, override val eventData: E) extends DEVSEvent(aTime, eventData) with Serializable
 
 /**
   * A class that holds the initial events passed into a ModelSimulator at initialization
   * @param internalEvents A list of internal events to be scheduled
   */
-case class InitialEvents(internalEvents: List[DEVSEvent[_ <: Serializable]]) 
+case class InitialEvents(internalEvents: List[DEVSEvent[_ <: Serializable]]) extends Serializable
 
 
 

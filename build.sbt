@@ -20,6 +20,15 @@ libraryDependencies ++= Seq(
 
 testOptions += Tests.Argument(TestFrameworks.JUnit, "-v")
 
+import sbtprotobuf.{ProtobufPlugin=>PB}
+import xsbti.compile
+
+PB.protobufSettings
+
+version in PB.protobufConfig := "3.0.0-beta-3"
+
+compileOrder := CompileOrder.JavaThenScala
+
 // Remove logback.xml from jar file
 mappings in (Compile,packageBin) ~= {
   (ms: Seq[(File,String)]) =>

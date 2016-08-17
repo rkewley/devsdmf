@@ -23,6 +23,7 @@ under the License.
 package devsmodel
 
 import akka.actor.ActorRef
+import com.google.protobuf.GeneratedMessage
 
 import scala.collection.immutable.TreeMap
 import java.time.Duration
@@ -37,12 +38,13 @@ trait GetState {
   /**
     * Gets the state of a variable at the reference time.  Throws an error if there is no value for a variable
     * at the requested time.
+ *
     * @param referenceTime Time for the retrieved state value
     * @param states The states map for the variable
     * @tparam T The type fo the retrieved variable
     * @return The value of the variable and time for that value
     */
-  protected def getState[T <: Serializable](referenceTime: Duration, states: TreeMap[Duration, T]): DynamicStateVariable[T] = {
+  protected def getState[T <: GeneratedMessage](referenceTime: Duration, states: TreeMap[Duration, T]): DynamicStateVariable[T] = {
     val stateBefore = states.filter({case (time, state) => time.compareTo(referenceTime) <= 0})
     stateBefore.lastOption match {
       case Some((time, state)) => DynamicStateVariable[T](time, state)
@@ -53,12 +55,13 @@ trait GetState {
 
   /**
     * Gets the state of a variable at the reference time returning an [[Option]]
+ *
     * @param referenceTime Time for the retrieved state value
     * @param states The states map for the variable
     * @tparam T The type fo the retrieved variable
     * @return The value of the variable and time for that value as an [[Option]]
     */
-  protected def getStateOption[T <: Serializable](referenceTime: Duration, states: TreeMap[Duration, T]): Option[DynamicStateVariable[T]] = {
+  protected def getStateOption[T <: GeneratedMessage](referenceTime: Duration, states: TreeMap[Duration, T]): Option[DynamicStateVariable[T]] = {
     val stateBefore = states.filter({case (time, state) => time.compareTo(referenceTime) <= 0})
     stateBefore.lastOption match {
       case Some((time, state)) => Some(DynamicStateVariable[T](time, state))
@@ -71,10 +74,11 @@ trait GetState {
 /**
   * A utility class to hold an immutable version of the trajectory of a state variable.  This is used when these values
   * are passed externally so that external objects cannot change the state ov a variable
+ *
   * @param stateTrajectory The ordered trajectory of the state variable.
   * @tparam T The type of the state variable
   */
-case class ImmutableSimEntityState[T <: Serializable](val stateTrajectory: TreeMap[Duration, T]) extends GetState {
+case class ImmutableSimEntityState[T <: GeneratedMessage](val stateTrajectory: TreeMap[Duration, T]) extends GetState {
   def getState(referenceTime: Duration): DynamicStateVariable[T] = getState(referenceTime, stateTrajectory)
   def getStateOption(referenceTime: Duration): Option[DynamicStateVariable[T]] = getStateOption(referenceTime, stateTrajectory)
 
@@ -85,6 +89,7 @@ case class ImmutableSimEntityState[T <: Serializable](val stateTrajectory: TreeM
   * execution.  In a simulation, it is important to know the value of a state variable and also the amount of time
   * that has passed since that variable changed its value.  This object tracks variable values over the duration of a
   * simulation.
+ *
   * @param stateTrajectory This data structure keeps track of the values of a state variable over time.  Th initial
   *                        value passed in here is usually an empty [[TreeMap]]
   * @param name The text name of the state variable
@@ -92,10 +97,11 @@ case class ImmutableSimEntityState[T <: Serializable](val stateTrajectory: TreeM
   *                       value is true.  Setting to false will conserve memory, but limit traceabilility
   * @tparam T The type of the state variable
   */
-class SimEntityState[T <: Serializable](private var stateTrajectory: TreeMap[Duration, T], val name: String, var recordingState: Boolean = true) extends GetState {
+class SimEntityState[T <: GeneratedMessage](private var stateTrajectory: TreeMap[Duration, T], val name: String, var recordingState: Boolean = true) extends GetState {
 
   /**
     * Method sets a new value for the state variable at a specific time
+ *
     * @param newState New value for the state variable
     * @param time The simulation time that the value is set
     */
@@ -106,6 +112,7 @@ class SimEntityState[T <: Serializable](private var stateTrajectory: TreeMap[Dur
 
   /**
     * Retrieves the latest [[DynamicStateVariable]] value for a state variable
+ *
     * @return The latest value
     */
   def getLatestDynamicStateValue: DynamicStateVariable[T] = {
@@ -117,21 +124,24 @@ class SimEntityState[T <: Serializable](private var stateTrajectory: TreeMap[Dur
 
   /**
     * Retrieves the time of the latest state update for a state variable
+ *
     * @return The time of the latest update
     */
   def getLatestUpdateTime: Duration = getLatestDynamicStateValue.timeInState
 
   /**
     * Gets only the state variable value for the latest state of a variable
+ *
     * @return The state value
     */
   def getLatestState: T = getLatestDynamicStateValue.state
 
   /**
     * Gets the entire state trajectory of a variable over the duration of the simulation
+ *
     * @return The immutable state trajectory of a variable
     */
-  def getStateTrajectory = ImmutableSimEntityState(stateTrajectory)
+  def getStateTrajectory = ImmutableSimEntityState[T](stateTrajectory)
 
   /**
     *  Removes all state updates that took place after the timeInPast
@@ -139,6 +149,7 @@ class SimEntityState[T <: Serializable](private var stateTrajectory: TreeMap[Dur
     *  This functionality is a remnant of the version of DEVS-DMF that implemented time warp parallel
     *  execution.  This functionality is not used in the current PDEVS (Parallel DEVS) implementation,
     *  but it is left in to support a potential return to time warp execution.
+ *
     * @param timeInPast The time after which all values are removed
     * @return This flag indicates whether any variable changes took place after timeInPast
     */
@@ -158,6 +169,7 @@ class SimEntityState[T <: Serializable](private var stateTrajectory: TreeMap[Dur
 
   /**
     * Returns a trajectory of all state variable values before a certain time
+ *
     * @param timeInPast  The time in the past before which to retrieve all values
     * @return The state trajectory of this state variable up to an including the value at timeInPast
     */
@@ -179,6 +191,7 @@ class SimEntityState[T <: Serializable](private var stateTrajectory: TreeMap[Dur
     * functionality allows the simulation to call [[getStateBefore()]] to retrieve past values to log, the call this
     * function to drop those values from memory.  If logging the values over time is not needed, the values
     * can simply be dropped by calling this function.
+ *
     * @param timeInPast The time before wich to drop all values
     */
   def dropStateBefore(timeInPast: Duration) = {
@@ -189,6 +202,7 @@ class SimEntityState[T <: Serializable](private var stateTrajectory: TreeMap[Dur
 
   /**
     * Gets the state of a variable at a specific time
+ *
     * @param referenceTime The simulation time for which the value is requested
     * @return The value of the state variable at referenceTime
     */

@@ -25,109 +25,76 @@ import java.io.{PrintWriter, File}
 import java.time.Duration
 
 import akka.actor.{Actor, ActorRef}
-import devsmodel.NextTime
+import com.google.protobuf.{Any, GeneratedMessage}
+import devsmodel.MessageConverter
+import dmfmessages.DMFSimMessages._
 
-/**
-  * Message sent to tell the logger to log an external event
-  * @param event  The external event to log
-  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
-  * @tparam E The type of event
-  */
-case class LogExternalEvent[E](event: E, timeOption: Option[Duration] = None)
+object SimLogger {
+  def buildAny[T <: GeneratedMessage](m: T): Any = Any.pack[T](m)
 
-/**
-  * Message sent to tell the logger to log an internal event
-  * @param event  The external event to log
-  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
-  * @tparam E The type of event
-  */
-case class LogInternalEvent[E](event: E, timeOption: Option[Duration] = None)
+  def buildLogToFile(logMessage: String, timeString: String): LogToFile = LogToFile.newBuilder()
+      .setLogMessage(logMessage).setTimeString(timeString).build
 
-/**
-  * Message sent to tell the logger to log an output event
-  * @param event  The external event to log
-  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
-  * @tparam E The type of event
-  */
-case class LogOutputEvent[E](event: E, timeOption: Option[Duration] = None)
+  def buildLogState(variableName: String, t: Duration, state: GeneratedMessage) : LogState = LogState.newBuilder()
+      .setVariableName(variableName).setTimeInStateString(t.toString).setState(buildAny(state)).build
 
-/**
-  * Message sent to tell the logger to log the given state
-  * @param name  The name of the state variable
-  * @param state The state to log
-  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
-  * @tparam S  The type of the state variable
-  */
-case class LogState[S](name: String, state: S, timeOption: Option[Duration] = None)
+  def buildDesignPointIteration(designPoint: Int, iteration: Int): DesignPointIteration = DesignPointIteration.newBuilder()
+    .setDesignPoint(designPoint).setIteration(iteration).build()
 
-/**
-  * Message sent to tell the logger to log a string to the log file
-  * @param s  The string to log
-  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
-  */
-case class LogToFile(s: String, timeOption: Option[Duration] = None)
+  def buildLogTerminate(returnCode: Int, logMessage: String, time: Duration): LogTerminate = LogTerminate.newBuilder()
+    .setReturnCode(returnCode).setLogMessage(logMessage).setTimeString(time.toString).build
+}
 
-/**
-  * Message sent to tell the logger to log termination of a simulation
-  * @param ret The simulation return code.  0 for success, otherwise indicates
-  *            failure.
-  * @param s  The string message to log
-  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
-  */
-case class LogTerminate(returnCode: Int, 
-                        s: String, 
-                        timeOption: Option[Duration] = None)
-
-/**
-  * Message to set design point and iteration for the simulation run
-  * @param designPoint  The design point
-  * @param iteration  The iteration
-  */
-case class DesignPointIteration(designPoint: Int, iteration: Int)
 
 /**
   * A class designed to log simulation messages.  The [[devsmodel.RootCoordinator]] sends messages to this logger
   * to keep the current time updated.  Any actor in the simulation can then log messages received and state data to this
   * logger with time parameters.
-  * @param fileName  The filename to which log messages are written
+ *
+  * @param dataLogger  A data logger actor to send log messages to
   * @param initialTime  The initial simulation time
+  * @param designPoint The design point and iteration for a model run set
   */
-class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private var designPoint: DesignPointIteration = DesignPointIteration(1,1)) extends Actor {
+abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private var designPoint: DesignPointIteration = SimLogger.buildDesignPointIteration(1,1)) extends Actor with MessageConverter {
   var currentTime = initialTime
 
   def receive = {
-    case LogExternalEvent(e, timeOption) =>
-      logString( "External event : " + e.toString, timeOption )
+    case ded: DEVSEventData =>
+      val eventData = convertEvent(ded.getEventData)
+      logString( ded.getEventType + " event: " + eventData, ded.getExecutionTimeString )
 
-    case LogInternalEvent(e, timeOption) =>
-      logString( "Internal event : " + e.toString, timeOption )
+    case ls: LogState =>
+      val state = convertState(ls.getState)
+      logString( ls.getVariableName + " : " + state, ls.getTimeInStateString )
 
-    case LogOutputEvent( e, timeOption ) =>
-      logString( "Output event : " + e.toString, timeOption )
+    case lf: LogToFile =>
+      logString( lf.getLogMessage, lf.getTimeString )
 
-    case LogState( n: String, s, timeOption ) =>
-      logString( n + " : " + s.toString, timeOption )
-
-    case LogToFile(s: String, timeOption) =>
-      logString( s, timeOption )
-
-    case NextTime(t) =>
-      currentTime = t
+    case nt: NextTime =>
+      currentTime = Duration.parse(nt.getTimeString)
 
     case d: DesignPointIteration =>
       designPoint = d
 
-    case LogTerminate( r: Int, s:String, timeOption ) =>
-      logString( "Terminate : " + s, timeOption )
+    case lt: LogTerminate => //LogTerminate( r: Int, s:String, timeOption ) =>
+      logString( "Terminate : " + lt.getLogMessage, lt.getTimeString )
       context.system.stop(self)
   }
 
-  protected def logString( s: String, timeOption: Option[Duration] ) = {
+  protected def logString(s: String, timeString: String): Unit = {
+    val t: Option[Duration] = timeString match {
+      case "" => None
+      case _ => Some(Duration.parse(timeString))
+    }
+    logString(s, t)
+  }
+
+  protected def logString( s: String, timeOption: Option[Duration] ): Unit = {
     val t = timeOption match {
       case Some(time) => time
       case None => currentTime
     }
-    dataLogger ! "" + designPoint.designPoint + ", " + designPoint.iteration + ", " + sender() + ", " + t + ", \"" + s.replaceAll("\"", "") + "\"\n"
+    dataLogger ! "" + designPoint.getDesignPoint + ", " + designPoint.getIteration + ", " + sender() + ", " + t + ", \"" + s.replaceAll("\"", "") + "\"\n"
   }
 
 }

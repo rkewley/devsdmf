@@ -23,23 +23,19 @@ package simutils
 
 import java.io.{PrintWriter, File}
 import akka.actor.Actor
+import dmfmessages.DMFSimMessages._
 
-/**
-  * Upon root simulation termination, this message is sent to close the logging file
-  */
-case class CloseFile()
-
-/**
-  * Lets sending actor know that logging file has been closed
-  */
-case class FileClosed()
+object FileLogger {
+  def buildCloseFile: CloseFile = CloseFile.newBuilder().build()
+  def buildFileClosed: FileClosed = FileClosed.newBuilder().build()
+}
 
 /**
   * A class designed to log simulation messages.  The [[devsmodel.RootCoordinator]] sends messages to this logger
   * to keep the current time updated.  Any actor in the simulation can then log messages received and state data to this
   * logger with time parameters.
+ *
   * @param fileName  The filename to which log messages are written
-  * @param initialTime  The initial simulation time
   */
 class FileLogger(val fileName: String) extends Actor {
   val pw = new PrintWriter(new File(fileName))
@@ -56,7 +52,7 @@ class FileLogger(val fileName: String) extends Actor {
 
     case c: CloseFile =>
       pw.close()
-      sender ! FileClosed()
+      sender ! FileLogger.buildFileClosed
   }
 
   /**
@@ -64,6 +60,6 @@ class FileLogger(val fileName: String) extends Actor {
     */
   override def postStop() {
     // No harm in calling this twice.
-    pw.close();
+    pw.close()
   }
 }

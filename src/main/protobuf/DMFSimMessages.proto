@@ -1,0 +1,299 @@
+syntax = "proto3";
+
+import "google/protobuf/any.proto";
+
+package dmfmessages;
+
+
+/**
+ * Message sent telling the [[ModelSimulator]] to generate output by invoking the [[ModelSimulator.DEVSModel.outputFunction]]
+ *
+ * @param timeString  The time of the output
+ */
+message GenerateOutput {
+    string timeString = 1;
+}
+
+/**
+ * Message sent telling the [[ModelCoordinator]] to empty its event bag and pass messages to handlding models
+ *
+ * @param timeString The time of the message
+ */
+message ProcessEventMessages {
+    string timeString = 1;
+}
+
+/**
+ * A message sent upon completion of processing event messages
+ *
+ * @param timeString The time of the message
+ */
+message ReadyToProcessMessages {
+    string timeString = 1;
+}
+
+/**
+ * Message telling the [[ModelSimulator]] to execute the next [[ModelSimulator.DEVSModel.externalStateTransition]], [[ModelSimulator.DEVSModel.internalStateTransition]]
+ *   or [[ModelSimulator.DEVSModel.confluentStateTransition]]
+ *
+ * @param timeString  The time of the state transition
+ */
+message ExecuteTransition {
+    string timeString = 1;
+}
+
+/**
+ * Message sent by [[ModelSimulator.DEVSModel]] to its enclosing [[ModelSimulator]] and from the  [[ModelSimulator]]
+  * to its parent when it is done generating output
+ *
+ * @param timeString  The time it is done
+ */
+message OutputDone {
+    string timeString = 1;
+}
+
+/**
+ * Message sent by the [[ModelSimulator]] to its parent when it is done adding and [[ExternalEvent]] to the [[ModelSimulator.externalEvents]] list
+ *
+ * @param timeString  The time it is done
+ * @param eventIndex An index assigned to the [[EventMessage]] by the [[ModelCoordinator]] to track completion of [[ExternalEvent]] bagging
+ */
+message BagEventDone {
+    string timeString = 1;
+    int64 eventIndex = 2;
+}
+
+/**
+ * Message sent by the [[ModelSimulator]] to its parent when it is done with a state transition.
+ *
+ * @param timeString  The time it is done
+ * @param nextTimeString The next scheduled internal state transition
+ */
+message TransitionDone {
+    string timeString = 1;
+    string nextTimeString = 2;
+}
+
+/**
+ * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of an internal state transition
+ *
+ * @param timeString  The time it is done
+ * @param nextTimeString The next scheduled internal state transition
+ */
+message InternalTransitionDone {
+    string timeString = 1;
+    string nextTimeString = 2;
+}
+
+/**
+ * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of an external state transition
+ *
+ * @param timeString  The time it is done
+ * @param nextTimeString The next scheduled internal state transition
+ */
+message ExternalTransitionDone {
+    string timeString = 1;
+    string nextTimeString = 2;
+}
+
+/**
+ * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of a confluent state transition
+ *
+ * @param timeString  The time it is done
+ * @param nextTimeString The next scheduled internal state transition
+ */
+message ConfluentTransitionDone {
+    string timeString = 1;
+    string nextTimeString = 2;
+}
+
+/**
+ * A message sent to each [[ModelSimulator]] and [[ModelCoordinator]] at simulation termination
+ */
+message Terminate {}
+
+/**
+ * A message sent back up the model hierarchy upon completion of termination activities.  When finally received by the
+ * [[RootCoordinator]], it will know that all simulation activities are complete.
+ */
+message TerminateDone {}
+
+/**
+ * An external event message
+ *
+ * @param event  The external event to be executed by the [[ModelSimulator.DEVSModel]]
+ * @param t  The time the message is delivered
+ * @param eventIndex An index assigned to the by the [[ModelCoordinator]] to track completion of external [[DEVSEvent]] bagging
+ */
+message EventMessage {
+    DEVSEventData event = 1;
+    string timeString = 2;
+    int64 eventIndex = 3;
+}
+
+/**
+ * A message sent by the [[ModelSimulator.DEVSModel]] to its enclosing [[ModelSimulator]] with the output data resulting
+  * from calling the [[ModelSimulator.DEVSModel.outputFunction]]
+ * It is then forwarded by the [[ModelSimulator]] to its parent
+ *
+ * @param output  The output data
+ * @param t  The time of the output
+ */
+message OutputMessage {
+    google.protobuf.Any output = 1;
+    string timeString = 2;
+}
+
+message EmptyProperties {}
+
+message EmptyRandomProperties{}
+
+message EmptyState{}
+
+/**
+  * Abstract class representing events that can be executed by the [[ModelSimulator.DEVSModel]].
+  *
+  * An InternalEvent will result in a call to the [[ModelSimulator.DEVSModel#internalStateTranstion]].
+  * From the perspective of the DEVS formalism, all the InternalEvents on the event schedule are part of the internal state of the model.
+  *
+  * An ExternalEvent will result in a externalStateTransition
+  *
+  * An InternalEvent will result in a call to the internalStateTranstion]].
+  * From the perspective of the DEVS formalism, all the InternalEvents on the event schedule are part of the internal state of the model.
+  *
+  * A OutputEvent is scheduled in order to produce an output of the DEVSModel
+  *
+  * @param eventType Defines the event as an external event, internal event, or output event.
+  * @param executionTimeString  Time the event is executed
+  * @param eventData  The data for the event
+  */
+message DEVSEventData {
+    enum EventType {
+        INTERNAL = 0;
+        EXTERNAL = 1;
+        OUTPUT = 2;
+    }
+    EventType eventType = 1;
+    string executionTimeString = 2;
+    google.protobuf.Any eventData = 3;
+}
+
+/**
+  * A class that holds the initial events passed into a ModelSimulator at initialization
+ *
+  * @param internalEvents A list of internal events to be scheduled
+  */
+message InitialEvents {
+    repeated DEVSEventData internalEvents = 1;
+}
+
+/**
+ * The message is sent at simulation initialization from the [[RootCoordinator]] to the [[RootCoordinator.topCoordinator]]
+ * in order to determine the first transition time in the simulation
+ */
+message GetNextTime{}
+
+/**
+ * Upon receiveing a [[GetNextTime]] message from the [[RootCoordinator]], the [[RootCoordinator.topCoordinator]] replies
+ * with this message
+ *
+ * @param timeString  The time of the first state transition in the [[RootCoordinator.topCoordinator]]
+ */
+message NextTime {
+    string timeString = 1;
+}
+
+/**
+ * This message when sent to the [[RootCoordinator]] starts the simulation
+ */
+message StartSimulation{}
+
+/**
+  * Message sent to tell the logger to log the given state
+  * @param varaibleName Name of the state variable being logged
+  * @param timeString  An time to log.  If None, it will log using the current simulation time
+  * @param state The value of the state
+  */
+message LogState {
+    string variableName = 1;
+    string timeInStateString = 2;
+    google.protobuf.Any state = 3;
+}
+
+/**
+  * Message sent to tell the logger to log a string to the log file
+  * @param logMessage  The string to log
+  * @param timeString A time to log.  If enpty, it will log using the current simulation time
+  */
+//case class LogToFile(s: String, timeOption: Option[Duration] = None)
+message LogToFile {
+    string logMessage = 1;
+    string timeString = 2;
+}
+
+/**
+  * Message sent to tell the logger to log termination of a simulation
+  * @param returnCode The simulation return code.  0 for success, otherwise indicates
+  *            failure.
+  * @param logMessage  The string message to log
+  * @param timeString A time to log.  If enpty, it will log using the current simulation time
+  */
+message LogTerminate {
+    int32 returnCode =1;
+    string logMessage = 2;
+    string timeString = 3;
+}
+
+/**
+  * Message to set design point and iteration for the simulation run
+  * @param designPoint  The design point
+  * @param iteration  The iteration
+  */
+message DesignPointIteration {
+    int32 designPoint = 1;
+    int32 iteration = 2;
+}
+
+/**
+  * Upon root simulation termination, this message is sent to close the logging file
+  */
+message CloseFile {}
+
+/**
+  * Lets sending actor know that logging file has been closed
+  */
+message FileClosed {}
+
+
+
+/**
+  * Message sent to [[MessageRouter]] by a new worker that becomes available
+  */
+message NewWorker {}
+
+/**
+  * Message sent to [[MessageRouter]] when a worker receives a message.  Used only for testing
+  */
+message GotMessage {}
+
+/**
+  * Message sent from [[MessageRouter]] to its creating actor to indicate workers are ready
+  */
+message WorkersReady {}
+
+message AkkaAddress {
+    string protocol = 1;
+    string system = 2;
+    string host = 3;
+    int32 port = 4;
+}
+
+message NewRemoteWorker {
+    AkkaAddress address = 1;
+}
+
+message RemoteWorkersReady {
+    repeated AkkaAddress addresses = 1;
+}
+
+

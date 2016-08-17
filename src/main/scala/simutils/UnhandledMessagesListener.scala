@@ -34,6 +34,6 @@ class UnhandledMessagesListener extends LoggingActor {
     case UnhandledMessage(message, sender, recipient) =>
       log.error("CRITICAL!  No handlers found for message " + message + " from " + sender.path.toString + " to " + recipient.path.toString)
       log.error("Shutting system down")
-      context.system.shutdown()
+      context.system.terminate()
   }
 }

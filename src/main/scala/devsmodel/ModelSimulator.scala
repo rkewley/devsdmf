@@ -24,13 +24,17 @@ package devsmodel
 import java.time.Duration
 
 import akka.actor._
+import com.google.protobuf.{Any, GeneratedMessage}
+import dmfmessages.DMFSimMessages._
 import simutils._
 import simutils.random.{SendInitRandom, InitRandom, SimRandom}
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
+import scala.collection.JavaConversions._
 
 /**
  * An [[Exception]] indicating that a [[ModelSimulator.DEVSModel]] has received an unhandled event
+ *
  * @param m  The text error message
  */
 class UnhandledEventException(m: String) extends Exception(m)
@@ -38,139 +42,21 @@ class UnhandledEventException(m: String) extends Exception(m)
 /**
  * An [[Exception]] indicating that the time stanps of messages to the [[ModelSimulator]] are not consistent with the time
  *   state of the [[ModelSimulator.DEVSModel]]
+ *
  * @param m  The text error message
  */
 class SynchronizationException(m: String) extends Exception(m)
 
 /**
- * Message sent telling the [[ModelSimulator]] to generate output by invoking the [[ModelSimulator.DEVSModel.outputFunction]]
- * @param t  The time of the output
- */
-case class GenerateOutput(t: Duration)
+* Class representing a single state variable in the model's state..  DynamicStateVariables can change
+* as the DEVSModel executes over time
+*
+* @param timeInState The last time this [[DynamicStateVariable]] changed its value
+* @param state The value of the state
+* @tparam T The data type of the state
+*/
+case class DynamicStateVariable[T <: GeneratedMessage](timeInState: Duration, state: T)
 
-/**
- * Message sent telling the [[ModelCoordinator]] to empty its event bag and pass messages to handlding models
- * @param t t The time of the message
- */
-case class ProcessEventMessages(t: Duration)
-
-/**
- * A message sent upon completion of processing event messages
- * @param t The time of the message
- */
-case class ReadyToProcessMessages(t: Duration)
-
-/**
- * An external event message
- * @param event  The external event to be executed by the [[ModelSimulator.DEVSModel]]
- * @param t  The time the message is delivered
- * @param eventIndex An index assigned to the by the [[ModelCoordinator]] to track completion of [[ExternalEvent]] bagging
- * @tparam E  The type of the [[ExternalEvent]]
- */
-case class EventMessage[E <: Serializable](event: ExternalEvent[E], t: Duration, eventIndex: Long)
-
-/**
- * Message telling the [[ModelSimulator]] to execute the next [[ModelSimulator.DEVSModel.externalStateTransition]], [[ModelSimulator.DEVSModel.internalStateTransition]]
- *   or [[ModelSimulator.DEVSModel.confluentStateTransition]]
- * @param t  The time of the state transition
- */
-case class ExecuteTransition(t: Duration)
-
-/**
- * A message sent by the [[ModelSimulator.DEVSModel]] to its enclosing [[ModelSimulator]] with the output data resulting
-  * from calling the [[ModelSimulator.DEVSModel.outputFunction]]
- * It is then forwarded by the [[ModelSimulator]] to its parent
- * @param output  The output data
- * @param t  The time of the output
- * @tparam O  The data type of the output
- */
-case class OutputMessage[O](output: O, t: Duration)
-
-/**
- * Message sent by [[ModelSimulator.DEVSModel]] to its enclosing [[ModelSimulator]] and from the  [[ModelSimulator]]
-  * to its parent when it is done generating output
- * @param t  The time it is done
- */
-case class OutputDone(t: Duration)
-
-/**
- * Message sent by the [[ModelSimulator]] to its parent when it is done adding and [[ExternalEvent]] to the [[ModelSimulator.externalEvents]] list
- * @param t  The time it is done
- * @param eventIndex An index assigned to the [[EventMessage]] by the [[ModelCoordinator]] to track completion of [[ExternalEvent]] bagging
- */
-case class BagEventDone(t: Duration, eventIndex: Long)
-
-
-/**
- * Message sent by the [[ModelSimulator]] to its parent when it is done with a state transition.
- * @param t  The time it is done
- * @param nextTime The next scheduled internal state transition
- */
-case class TransitionDone(t: Duration, nextTime: Duration)
-
-/**
- * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of an internal state transition
- * @param t  The time it is done
- * @param nextTime The next scheduled internal state transition
- */
-case class InternalTransitionDone(t: Duration, nextTime: Duration)
-
-/**
- * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of an external state transition
- * @param t  The time it is done
- * @param nextTime The next scheduled internal state transition
- */
-case class ExternalTransitionDone(t: Duration, nextTime: Duration)
-
-/**
- * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of a confluent state transition
- * @param t  The time it is done
- * @param nextTime The next scheduled internal state transition
- */
-case class ConfluentTransitionDone(t: Duration, nextTime: Duration)
-
-/**
- * A message sent to each [[ModelSimulator]] and [[ModelCoordinator]] at simulation termination
- */
-case class Terminate()
-
-/**
- * A message sent back up the model hierarchy upon completion of termination activities.  When finally received by the
- * [[RootCoordinator]], it will know that all simulation activities are complete.
- */
-case class TerminateDone()
-
-/**
-  * Class representing a single state variable in the model's [[ModelState]].  [[DynamicStateVariable]]s can change
-  * as the DEVSModel executes over time
-  * @param timeInState The last time this [[DynamicStateVariable]] changed its value
-  * @param state The value of the state
-  * @tparam T The data type of the state
-  */
-case class DynamicStateVariable[T <: Serializable](timeInState: Duration, state: T)
-
-
-/**
-  * Abstract class representing the static properties of the model that does not change over the execution of the simulation
-  */
-abstract class ModelProperties extends Serializable
-
-/**
-  * Abstract class representing random properties of a model.  A random property is a property that is randomly
-  * initialized at run time, but then does not change over the course of simulation time advance.  For example, the
-  * skill of an observer to detect targets is a random uniform variable that is set at the beginning of the
-  * simulation.  It will be different for eaach simulation run, but it will not change as time advances for the
-  * sinulation.  This class is used in the constructor of a [[ModelSimulator.DEVSModel]] to denote a model with
-  * no random properties.  A subclass of RandomProperties will contain an instance variable for each random property of
-  * the model.
-  */
-case class RandomProperties()
-
-/**
-  * Abstract class representing the dynamic state of the model that changes over execution of the simulation.
-  * This class is intended to contain all of the [[ModelSimulator.DEVSModel]]'s [[DynamicStateVariable]]s
-  */
-abstract class ModelState extends Serializable
 
 /**
   * All internal state of a [[ModelSimulator.DEVSModel]] is accessed and maintained by this object.  It contains
@@ -184,17 +70,17 @@ abstract class ModelState extends Serializable
   * remaining in a weapon is a variable that is known about at simulation start.
   *
   * 2.  Sometimes a DEVSModel must keep track of information it receives during a simulation.  This information
-  * is typically received via receipt of [[ExternalEvent]]s.  For example, it must keep track of the location of
-  * all external entities.  These locations would sent via an [[ExternalEvent]] messages.  In this case, a map is used
+  * is typically received via receipt of ExternalEvents.  For example, it must keep track of the location of
+  * all external entities.  These locations would sent via an[ExternalEvent messages.  In this case, a map is used
   * keep track of the location of each external object over time.  The internal stateMaps variable lists all
   * of the maps that are used to keep track of state.
   *
   * This class is intended to be automatically code generated from knowledge of the state variables to be tracked.
-  * See [[autohold.BeansStateManager]] for an example of an auto-generated subclass of ModelStateManager.
+  *
   * @param initialState
   * @tparam S
   */
-abstract class ModelStateManager[S <: ModelState](initialState: S) {
+abstract class ModelStateManager[S <: GeneratedMessage](initialState: S) {
   /**
     * Single valued [[SimEntityState]] objects to keep track of internal state for a [[ModelSimulator.DEVSModel]]
     */
@@ -202,19 +88,20 @@ abstract class ModelStateManager[S <: ModelState](initialState: S) {
 
   /**
     * Maps to dynamically keep track of state variables that are discovered during simulation execution
-    * via [[ExternalEvent]]s.  Each map has a key to represent the name of the value to be tracked
+    * via ExternalEvents.  Each map has a key to represent the name of the value to be tracked
     * and a [[SimEntityState]] for each key in the map.
     */
   val stateMaps: Map[String, mutable.Map[_, SimEntityState[_]]] = Map[String, mutable.Map[_, SimEntityState[_]]]()
 
   /**
     * Utility function to build the [[SimEntityState]] object for to manage a state variable
+    *
     * @param initialState Initial value of the state variable
     * @param name A descriptive text name of the variable - used for logging and data collection.
     * @tparam T The data type of the state variable
     * @return The manager for the variable state.
     */
-  def buildSimEntityState[T <: Serializable](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
+  def buildSimEntityState[T <: GeneratedMessage](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
     val stateTrajectory = new TreeMap[Duration, T] + (initialState.timeInState -> initialState.state)
     new SimEntityState[T](stateTrajectory, name)
   }
@@ -227,13 +114,14 @@ abstract class ModelStateManager[S <: ModelState](initialState: S) {
   * implementation of the notion of a super dense event schedule in which each instant of time can also have a large
   * number of events which themselves are ordered.  This ordering permits a consistent application of pulling the
   * next event from a schedule, even if the two events are scheduled for the same time.
+  *
   * @param executionTime  Time the event is executed
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
   */
-abstract class DEVSEvent[E <: Serializable](val executionTime: Duration, val eventData: E) extends Ordered[DEVSEvent[_ <: Serializable]] with Serializable {
+abstract class DEVSEvent[E <: GeneratedMessage](val executionTime: Duration, val eventData: E) extends Ordered[DEVSEvent[_ <: GeneratedMessage]] {
 
-  override def compare(anotherEvent: DEVSEvent[_ <: Serializable]): Int = {
+  override def compare(anotherEvent: DEVSEvent[_ <: GeneratedMessage]): Int = {
     val durationCompare =  this.executionTime.compareTo(anotherEvent.executionTime)
     durationCompare match {
       case 0 =>  this.hashCode().compareTo(anotherEvent.hashCode())
@@ -246,40 +134,108 @@ abstract class DEVSEvent[E <: Serializable](val executionTime: Duration, val eve
 /**
   * Abstract class representing an external event sent to the [[ModelSimulator.DEVSModel]].  An ExternalEvent will result in a
   * call to the [[ModelSimulator.DEVSModel.externalStateTransition]]
+  *
   * @param executionTime  Time the event is executed
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
   */
-class ExternalEvent[E <: Serializable](override val executionTime: Duration, override val eventData: E) extends DEVSEvent[E](executionTime, eventData) with Serializable
+class ExternalEvent[E <: GeneratedMessage](override val executionTime: Duration, override val eventData: E) extends DEVSEvent[E](executionTime, eventData)
 
 /**
-  * Abstract class representing an internal event within the [[DEVSModel]].  An InternalEvent will result in a
+  * Abstract class representing an internal event within the [[ModelSimulator.DEVSModel]].  An InternalEvent will result in a
   * call to the [[ModelSimulator.DEVSModel#internalStateTranstion]].  From the perspective of the DEVS formalism, all the InternalEvents on the event
   * schedule are part of the internal state of the model.
+ *
   * @param aTime  Time the event is executed
   * @param anEvent  The data for the event
   * @tparam E  The data type for the eventData
   */
-class InternalEvent[E <: Serializable](aTime: Duration, anEvent: E) extends DEVSEvent(aTime, anEvent) with Serializable
+class InternalEvent[E <: GeneratedMessage](aTime: Duration, anEvent: E) extends DEVSEvent(aTime, anEvent)
 
 /**
   * Abstract class that is scheduled in order to produce an output of the [[ModelSimulator.DEVSModel]]
+  *
   * @param aTime Time of the output
   * @param eventData The data sent as output from the model
   * @tparam E  The data type for the eventData
   */
-class OutputEvent[E <: Serializable](aTime: Duration, override val eventData: E) extends DEVSEvent(aTime, eventData) with Serializable
+class OutputEvent[E <: GeneratedMessage](aTime: Duration, override val eventData: E) extends DEVSEvent(aTime, eventData)
 
 /**
-  * A class that holds the initial events passed into a ModelSimulator at initialization
-  * @param internalEvents A list of internal events to be scheduled
+  * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
+  * an [[OutputMessage]], or a state object to the specific
+  * [[GeneratedMessage]] that holds the data
+  * This class must be extended by any implementing simulation in order to convert events.  To do so, the extending
+  * trait must define an eventList, outputList, and stateList that hold default instances of the GeneratedMessages
+  * converted for that simulation.
   */
-case class InitialEvents(internalEvents: List[DEVSEvent[_ <: Serializable]]) extends Serializable
+trait MessageConverter {
+  val eventList: List[GeneratedMessage]
+  val outputList: List[GeneratedMessage]
+  val stateList: List[GeneratedMessage]
+  def convertEvent(event: com.google.protobuf.Any) = convertAny(event, eventList)
+  def convertOutput(output: com.google.protobuf.Any) = convertAny(output, outputList)
+  def convertState(state: com.google.protobuf.Any) = convertAny(state, stateList)
+  private def convertAny(any: com.google.protobuf.Any, classes: List[GeneratedMessage]): GeneratedMessage = {
+    classes.find(msg => any.is(msg.getClass)) match {
+      case Some(msg) => any.unpack(msg.getClass)
+      case None => throw new Exception("Cannot convert com.google.protobuf.any object" + any.getTypeUrl)
+    }
+  }
+}
 
+object ModelSimulator {
+  def buildGenerateOutput(t: Duration): GenerateOutput = GenerateOutput.newBuilder().setTimeString(t.toString).build()
 
+  def buildProcessEventMessages(t: Duration): ProcessEventMessages = ProcessEventMessages.newBuilder().setTimeString(t.toString).build()
 
+  def buildTerminateDone: TerminateDone = TerminateDone.newBuilder().build()
 
+  def buildBagEventDone(t: Duration, eventIndex: Long): BagEventDone = BagEventDone.newBuilder().setEventIndex(eventIndex)
+      .setTimeString(t.toString).build()
 
+  def buildReadyToProcessEventMessages(t: Duration): ReadyToProcessMessages = ReadyToProcessMessages.newBuilder().setTimeString(t.toString).build()
+
+  def buildTransitionDone(t: Duration, nextTime: Duration): TransitionDone = TransitionDone.newBuilder()
+      .setTimeString(t.toString).setNextTimeString(nextTime.toString).build()
+
+  def buildInternalTransitionDone(t: Duration, nextTime: Duration): InternalTransitionDone = InternalTransitionDone.newBuilder()
+    .setTimeString(t.toString).setNextTimeString(nextTime.toString).build()
+
+  def buildExternalTransitionDone(t: Duration, nextTime: Duration): ExternalTransitionDone = ExternalTransitionDone.newBuilder()
+    .setTimeString(t.toString).setNextTimeString(nextTime.toString).build()
+
+  def buildOutputMessage[T <: GeneratedMessage](output: T, t: Duration): OutputMessage = {
+    val any: com.google.protobuf.Any = buildAny(output)
+    OutputMessage.newBuilder().setTimeString(t.toString).setOutput(any).build()
+  }
+
+  def buildOutputDone(t: Duration): OutputDone = OutputDone.newBuilder().setTimeString(t.toString).build
+
+  def buildEventMessage(eventData: DEVSEventData, t: Duration, eventIndex: Long): EventMessage = EventMessage.newBuilder().setEvent(eventData)
+      .setTimeString(t.toString).setEventIndex(eventIndex).build
+
+  def buildAny[T <: GeneratedMessage](m: T): Any = Any.pack[T](m)
+
+  def buildDEVSEventData(eventType: DEVSEventData.EventType, t: Duration, eventData: GeneratedMessage): DEVSEventData = DEVSEventData.newBuilder().setEventType(eventType)
+      .setExecutionTimeString(t.toString).setEventData(buildAny(eventData)).build()
+
+  def buildExecuteTransition(t: Duration): ExecuteTransition = ExecuteTransition.newBuilder().setTimeString(t.toString).build()
+
+  def buildTerminate: Terminate = Terminate.newBuilder().build()
+
+  def buildNextTime(t: Duration): NextTime = NextTime.newBuilder().setTimeString(t.toString).build
+
+  def buildStartSimulation: StartSimulation = StartSimulation.newBuilder().build()
+
+  def buildEmptyProperties: EmptyProperties = EmptyProperties.newBuilder().build()
+
+  def buildBuildEmptyRandomPropterties: EmptyRandomProperties = EmptyRandomProperties.newBuilder().build()
+
+  def buildEmptyState: EmptyState = EmptyState.newBuilder().build()
+
+  def buildInitialEvents(internalEvents: Seq[DEVSEventData]): InitialEvents = InitialEvents.newBuilder().addAllInternalEvents(internalEvents).build
+}
 
 
 /**
@@ -287,10 +243,9 @@ case class InitialEvents(internalEvents: List[DEVSEvent[_ <: Serializable]]) ext
    * and Ziegler in <a href="http://dl.acm.org/citation.cfm?id=194336">Parallel DEVS: a parallel, hierarchical, modular, modeling formalism</a>
   * A PostScript version of the paper is available <a href="http://www.cs.mcgill.ca/~hv/articles/DiscreteEvent/DEVS/rev-devs.ps.gz">here</a>.
   * Each Simulator class of the simulation will have a subclass of this one, and that subclass can be code generated from
-  * knowledge of the state, properties, and events it needs to respond to.  See [[autohold.BeansSimulator]] for an example.
-  * Note that each ModelSimulator executes an internal [[DEVSModel]] class that captures properties, state variables,
-  * and event transitions.
-  * @param properties  A sublcass of [[ModelProperties]] the represents the static properties for the internal [[DEVSModel]]
+  * knowledge of the state, properties, and events it needs to respond to.
+  *
+  * @param properties  A sublcass of com.google.protobuf.GeneratedMessage the represents the static properties for the internal [[DEVSModel]]
   * @param initialTime  The initial time of the [[DEVSModel]] being simulated.  This is needed by the constructor in creating the
   *                     abstract value internal [[DEVSModel]]
   * @param initialState The initial state of the internal [[DEVSModel]]
@@ -298,8 +253,13 @@ case class InitialEvents(internalEvents: List[DEVSEvent[_ <: Serializable]]) ext
   * @param randomActor  A reference to a [[simutils.random.SplitStreamActor]] to query for random number generation parameters
   * @param simLogger A reference to a [[simutils.SimLogger]] for logging simulation messages
   */
-abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelStateManager[S]]
-  (val properties: P, initialTime: Duration, initialState: S, initialEvents: InitialEvents, val randomActor: ActorRef, val simLogger: ActorRef) extends LoggingActor with UniqueNames {
+abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <: ModelStateManager[S]]
+  (val properties: P,
+   initialTime: Duration,
+   initialState: S,
+   initialEvents: InitialEvents,
+   val randomActor: ActorRef,
+   val simLogger: ActorRef) extends LoggingActor with UniqueNames with MessageConverter {
 
   override val supervisorStrategy =
     OneForOneStrategy() {
@@ -307,7 +267,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
         SupervisorStrategy.Escalate
         }
       }
-  
+
   /**
    * The DEVS framework model that this actor executes
    */
@@ -323,12 +283,14 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
 
   /**
    * A convenience function to get the current time, or time of last state transitioin, of the [[DEVSModel]]
+ *
    * @return The current time of the [[DEVSModel]]
    */
   private def getCurrentTime = devs.currentTime
 
   /**
    * A convenience functioin to get the time of the next [[DEVSModel.internalStateTransition]]
+ *
    * @return The time of the next [[DEVSModel.internalStateTransition]]
    */
   private def getNextTime = devs.getNextTime
@@ -340,7 +302,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
   def preTerminate() = {
     devs.logState
     devs.modelPreTerminate()
-    self ! TerminateDone()
+    self ! ModelSimulator.buildTerminateDone
   }
 
 
@@ -355,7 +317,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
    */
   def receive = {
 
-    case GetNextTime() =>
+    case gnt: GetNextTime =>
       logDebug(initialTime + "Received GetNextTime.")
       randomActor ! SendInitRandom()
 
@@ -365,14 +327,14 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
       devs.random = random
       devs.initializeRandomProperties
       logDebug("Sending next time: " + getNextTime + " to parent.")
-      context.parent ! NextTime(getNextTime)
+      context.parent ! ModelSimulator.buildNextTime(getNextTime)
       context.become(executeSimulation)
   }
 
   /**
    * Receive method that handle external messages to execute the [[DEVSModel]].
    * Call [[processSimulationMessages]] for DEVs related messages, or, if
-   * unhandled, [[processStateTransitionMessages]] on DEVModel for model related
+   * unhandled, processStateTransitionMessages on DEVModel for model related
    * messages.
    */
   def executeSimulation: Receive = {
@@ -391,14 +353,15 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
    */
   def processSimulationMessages: Receive = {
 
-    case GetNextTime() =>
+    case gnt: GetNextTime =>
       logDebug(getCurrentTime + " Received GetNextTime.  Sending " + getNextTime + " to parent.")
-      sender() ! NextTime(getNextTime)
+      sender() ! ModelSimulator.buildNextTime(getNextTime)
 
     /**
      * Upon receipt of a [[GenerateOutput]] message, call the output function and send output message to parent
      */
-    case GenerateOutput(t) =>
+    case g: GenerateOutput =>
+      val t = Duration.parse(g.getTimeString)
       if (t.compareTo(getNextTime) == 0) {
         devs.outputFunction(t)
       }
@@ -406,24 +369,31 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
         throw new SynchronizationException(t + " in GenerateOutput message does not match next time: " + getNextTime)
       }
 
-    case outputMessage: OutputMessage[_] =>
-      logDebug(outputMessage.t + " Received GenerateOutput and generated the following output: " + outputMessage.output)
+    case outputMessage: OutputMessage =>
+      logDebug(outputMessage.getTimeString + " Received GenerateOutput and generated the following output: " + convertOutput(outputMessage.getOutput))
       context.parent ! outputMessage
 
     case outputDone: OutputDone =>
-      logDebug(sender().path.name + " done with output at " + outputDone.t)
+      logDebug(sender().path.name + " done with output at " + outputDone.getTimeString)
       context.parent ! outputDone
 
-    case EventMessage(externalEvent, t, eventIndex) =>
+    case e: EventMessage =>
+      val t = Duration.parse(e.getTimeString)
+      val eventIndex = e.getEventIndex
+      val devsEventData = convertEvent(e.getEvent.getEventData)
+      val externalEvent = new ExternalEvent(t, devsEventData)
+      (externalEvent, t, eventIndex)
       logDebug(t + " Received and bagged external event " + externalEvent + " with index " + eventIndex)
       externalEvents = externalEvent :: externalEvents
-      simLogger ! LogExternalEvent( externalEvent.eventData, Some(t) )
-      sender() ! BagEventDone(t, eventIndex)
+      simLogger ! e.getEvent
+      sender() ! ModelSimulator.buildBagEventDone(t, eventIndex)
 
-    case ProcessEventMessages(t) =>
-      context.parent ! ReadyToProcessMessages(t)
-      
-    case ExecuteTransition(t) =>
+    case p: ProcessEventMessages =>
+      val t = Duration.parse(p.getTimeString)
+      context.parent ! ModelSimulator.buildReadyToProcessEventMessages(t)
+
+    case et: ExecuteTransition =>
+      val t = Duration.parse(et.getTimeString)
       val tNext = devs.timeAdvanceFunction
       logDebug(t + " Received ExecuteTransition")
       logDebug(t + " Current time is " + getCurrentTime + " and externalEvents has " + externalEvents.size + " members.")
@@ -447,31 +417,34 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
           + getCurrentTime + " and next time " + devs.timeAdvanceFunction)
       }
 
-    case InternalTransitionDone(t, _) =>
+    case itd: InternalTransitionDone =>
+      val t = Duration.parse(itd.getTimeString)
       if(externalEvents.isEmpty) {
         devs.currentTime = t
-        context.parent ! TransitionDone(t, getNextTime)
+        context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
       } else {
         devs.externalStateTransition(t)
       }
 
-    case ExternalTransitionDone(t, _) =>
+    case etd: ExternalTransitionDone =>
+      val t = Duration.parse(etd.getTimeString)
       devs.currentTime = t
       if (externalEvents.isEmpty)
-        context.parent ! TransitionDone(t, getNextTime)
+        context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
       else
         devs.externalStateTransition(t)
 
-    case ConfluentTransitionDone(t, _) =>
+    case ctd: ConfluentTransitionDone =>
+      val t = Duration.parse(ctd.getTimeString)
       externalEvents = List()
       devs.currentTime = t
-      context.parent ! TransitionDone(t, getNextTime)
+      context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
 
-    case Terminate() =>
+    case t: Terminate =>
       preTerminate()
 
-    case TerminateDone() =>
-      context.parent ! TerminateDone()
+    case td: TerminateDone =>
+      context.parent ! td
   }
 
   /**
@@ -480,17 +453,17 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
     * A PostScript version of the paper is available <a href="http://www.cs.mcgill.ca/~hv/articles/DiscreteEvent/DEVS/rev-devs.ps.gz">here</a>.
     *
     * A DEVSModel class will always be an internal class of a [[ModelSimulator]].  This allows a DEVSModel to create its
-    * own actors and await completion of computations during calculations.  See [[autohold.BeansSimulator]] with internal
-    * class [[autohold.BeansSimulator.BeansModel]], which can be automatically code generated.  See [[autohold.BeansModelImpl]] for
-    * an example of a mixed in trait that implements event handlers.
-    * @param properties  A sub-class of [[ModelProperties]] holding the static variables that do not change over time
-    * @param initialState  A sub-class of [[ModelState]] holding the [[DynamicStateVariable]]s that change during model state transitions
+    * own actors and await completion of computations during calculations.
+    *
+    * @param properties  A class holding the static variables that do not change over time
+    * @param initialState  A class holding the DynamicStateVariables that change during model state transitions
     * @param initialTime  The initial time of the DEVS model
-    * @param simLogger A reference to a [[simutils.SimLogger]] for logging simulation messages    * @tparam P  The data type for the [[ModelProperties]]
-    * @tparam S  The data type for the  [[ModelState]]
+    * @param simLogger A reference to a [[simutils.SimLogger]] for logging simulation messages
+    * @tparam P  The data type for the model properties
+    * @tparam S  The data type for the model state
     * @tparam M  The data type of the [[ModelStateManager]]
     */
-  abstract class DEVSModel[P <: ModelProperties, R <: RandomProperties, S <: ModelState, M <: ModelStateManager[S]]
+  abstract class DEVSModel[P <: GeneratedMessage, R <: GeneratedMessage, S <: GeneratedMessage, M <: ModelStateManager[S]]
   (val properties: P,
    initialState: S,
    initialEvents: InitialEvents,
@@ -506,12 +479,14 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
 
     /**
       * Utility function to enable actor logging by the implementing trait
+ *
       * @param s  The string to be written by the logger
       */
     def log_debug(s: String) = logDebug(s)
 
     /**
       * Utility function called to build the [[ModelStateManager]] for this model
+ *
       * @param state The initial state of the model
       * @return Returns the [[ModelStateManager]]
       */
@@ -542,6 +517,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
 
     /**
       * A utility method to turn debugging on and off in the [[simutils.LoggingActor]]
+ *
       * @param d Set true to enable debug logging
       */
     def setDebug(d: Boolean): Unit = {
@@ -561,58 +537,76 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
     /**
       * Adding initial events to the schedule
       */
-    initialEvents.internalEvents.foreach { event => schedule.addEvent(event) }
+    initialEvents.getInternalEventsList().foreach { event =>
+      val t: Duration = Duration.parse(event.getExecutionTimeString)
+      val eventData: GeneratedMessage = convertEvent(event.getEventData)
+      val devsEvent: DEVSEvent[_ <: GeneratedMessage] = new InternalEvent(t, eventData)
+      schedule.addEvent(devsEvent)
+    }
+
+
+    //initialEvents.internalEvents.foreach { event => schedule.addEvent(event) }
 
     /**
       * Utility method to allow implementatios of handled events to log a message to the [[simutils.SimLogger]]
+ *
       * @param message  The message to be logged
       */
-    def logMessage(message: String, timeOption: Option[Duration] = None ) = {
-      simLogger ! LogToFile(message, timeOption)
+    def logMessage(message: String, time: Option[Duration] = None ) = {
+      val timeString = time match {
+        case Some(t) => t.toString
+        case None => ""
+      }
+      simLogger ! SimLogger.buildLogToFile(message, timeString)
     }
 
     /**
       * Utility method called upon completion of [[internalStateTransition]] to have the enclosing [[ModelSimulator]]
       * to send an [[InternalTransitionDone]] to its parent [[ModelCoordinator]]
+ *
       * @param t The time of the event transition
       */
     def internalTransitionDone(t: Duration) = {
       logDebug(t + " Completed internal transition.")
-      sim ! InternalTransitionDone(t, getNextTime)
+      sim ! ModelSimulator.buildInternalTransitionDone(t, getNextTime)
     }
 
     /**
       * Utility method called upon completion of [[externalStateTransition]] to have the enclosing [[ModelSimulator]]
       * to send an [[ExternalTransitionDone]] to its parent [[ModelCoordinator]]
+ *
       * @param t The time of the event transition
       */
     def externalTransitionDone(t: Duration) = {
       logDebug(t + " Completed external transition.")
-      sim ! ExternalTransitionDone(t, getNextTime)
+      sim ! ModelSimulator.buildExternalTransitionDone(t, getNextTime)
     }
 
     /**
       * A utility method that allows handling event implementations to schedule an output event.
+ *
       * @param output  The message to be output
       * @param t The simulation time of the output
       * @tparam T The type of the output message
       */
-    def addOutput[T <: Serializable](output: T, t: Duration) = {
+    def addOutput[T <: GeneratedMessage](output: T, t: Duration) = {
       schedule.addEvent(new OutputEvent[T](t, output))
     }
 
     /**
       * A utility method that allows handling event implementations to schedule an internal event
+ *
       * @param eventData The event to schedule
       * @param t The time of the event
       * @tparam T The data type of the event
       */
-    def addEvent[T <: Serializable](eventData: T, t: Duration) = {
+    def addEvent[T <: GeneratedMessage](eventData: T, t: Duration) = {
       schedule.addEvent(new InternalEvent[T](t, eventData))
     }
 
     /**
      * A convenience method to retrieve the time of next scheduled event.
+ *
      * @return  The time of the next scheduled event
      */
     def getNextTime: Duration = schedule.getNextScheduleTime
@@ -622,8 +616,8 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
       */
     def logState: Unit = {
       state.stateVariables.foreach { stateVariable =>
-        stateVariable.getStateTrajectory.stateTrajectory.foreach { case(t, s) =>
-          simLogger ! LogState(stateVariable.name, s, Some(t))
+        stateVariable.getStateTrajectory.stateTrajectory.foreach { case(t, s:GeneratedMessage) =>
+          simLogger ! SimLogger.buildLogState(stateVariable.name, t, s)
         }
       }
     }
@@ -639,6 +633,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
      * It only considers the current state of the system in this transition.  Within a DEVSModel, the current state
      * is a combination of the [[properties]], [[state]], and the [[schedule]].  Upon completion, it must send a
      * [[InternalTransitionDone]] message to the enclosing [[ModelSimulator]]
+ *
      * @param t  The time of the internal state transition
      */
     def internalStateTransition(t: Duration) = {
@@ -647,7 +642,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
         case Some(event) => event match {
           case o: OutputEvent[_] => internalTransitionDone(t)
           case d: DEVSEvent[_] => {
-            simLogger ! LogInternalEvent( d.eventData, Some(t) )
+            simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.INTERNAL, t, d.eventData.asInstanceOf[GeneratedMessage])
             handleInternalStateTransitionData(d.eventData, t)
           }
           case _ => throw new SynchronizationException("Cannot recognize event on schedule: " + event)
@@ -663,6 +658,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
      * The effect is to update the [[state]] and to schedule it for an [[internalStateTransition]].
      * The next [[state]] is computed on the basis of the present [[state]], and the events received,  Upon completion, it must send a
      * [[ExternalTransitionDone]] message to the enclosing [[ModelSimulator]]
+ *
 
      * @param t  The time of the external  state transition
      */
@@ -686,6 +682,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
      * The model will still be imminent because it has an internal event scheduled for the current time, so that
      * will be called next.  This may be overridden to define an explicit confluent transition function.  If overridden, the
      * confluent state transition must send a [[ConfluentTransitionDone]] message to the enclosing [[ModelSimulator]]
+ *
      * @param t  The time of the confluent state transition
      */
     def confluentStateTransition(t: Duration): Unit = {
@@ -695,6 +692,7 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
 
     /**
      * The time advance function uses the internal state of the system to determine the time of the next internal transtion
+ *
      * @return  Returns the time of the next internal transition as calculated from the simulation start time
      */
     def timeAdvanceFunction: Duration = schedule.getNextScheduleTime
@@ -703,19 +701,20 @@ abstract class ModelSimulator[P <: ModelProperties, S <: ModelState, M <: ModelS
      * Output function is called right before the [[internalStateTransition]].  It returns the output of the system
      * which can be used to send messages to other DEVS models in a coupled DEVS system.  Upon completion, send an
      * [[OutputMessage]] to the enclosing [[ModelSimulator]]
+ *
      * @param t  The time of the output
      */
     def outputFunction(t: Duration): Unit = {
       schedule.getNextSingleEvent match {
         case Some(e) => e match {
           case o: OutputEvent[_] =>
-            sim ! OutputMessage(o.eventData, t)
-            simLogger ! LogOutputEvent(o.eventData, Some(t))
+            sim ! ModelSimulator.buildOutputMessage(o.eventData, t)
+            simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, o.eventData)
           case _ =>
         }
         case None =>
       }
-      sim ! OutputDone(t)
+      sim ! ModelSimulator.buildOutputDone(t)
     }
 
     def processStateTransitionMessages: Receive = {

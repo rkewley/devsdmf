@@ -44,7 +44,7 @@ trait GetState {
     * @tparam T The type fo the retrieved variable
     * @return The value of the variable and time for that value
     */
-  protected def getState[T <: GeneratedMessage](referenceTime: Duration, states: TreeMap[Duration, T]): DynamicStateVariable[T] = {
+  protected def getState[T <: java.io.Serializable](referenceTime: Duration, states: TreeMap[Duration, T]): DynamicStateVariable[T] = {
     val stateBefore = states.filter({case (time, state) => time.compareTo(referenceTime) <= 0})
     stateBefore.lastOption match {
       case Some((time, state)) => DynamicStateVariable[T](time, state)
@@ -61,7 +61,7 @@ trait GetState {
     * @tparam T The type fo the retrieved variable
     * @return The value of the variable and time for that value as an [[Option]]
     */
-  protected def getStateOption[T <: GeneratedMessage](referenceTime: Duration, states: TreeMap[Duration, T]): Option[DynamicStateVariable[T]] = {
+  protected def getStateOption[T <: java.io.Serializable](referenceTime: Duration, states: TreeMap[Duration, T]): Option[DynamicStateVariable[T]] = {
     val stateBefore = states.filter({case (time, state) => time.compareTo(referenceTime) <= 0})
     stateBefore.lastOption match {
       case Some((time, state)) => Some(DynamicStateVariable[T](time, state))
@@ -78,7 +78,7 @@ trait GetState {
   * @param stateTrajectory The ordered trajectory of the state variable.
   * @tparam T The type of the state variable
   */
-case class ImmutableSimEntityState[T <: GeneratedMessage](val stateTrajectory: TreeMap[Duration, T]) extends GetState {
+case class ImmutableSimEntityState[T <: java.io.Serializable](val stateTrajectory: TreeMap[Duration, T]) extends GetState {
   def getState(referenceTime: Duration): DynamicStateVariable[T] = getState(referenceTime, stateTrajectory)
   def getStateOption(referenceTime: Duration): Option[DynamicStateVariable[T]] = getStateOption(referenceTime, stateTrajectory)
 
@@ -97,7 +97,7 @@ case class ImmutableSimEntityState[T <: GeneratedMessage](val stateTrajectory: T
   *                       value is true.  Setting to false will conserve memory, but limit traceabilility
   * @tparam T The type of the state variable
   */
-class SimEntityState[T <: GeneratedMessage](private var stateTrajectory: TreeMap[Duration, T], val name: String, var recordingState: Boolean = true) extends GetState {
+class SimEntityState[T <: java.io.Serializable](private var stateTrajectory: TreeMap[Duration, T], val name: String, var recordingState: Boolean = true) extends GetState {
 
   /**
     * Method sets a new value for the state variable at a specific time

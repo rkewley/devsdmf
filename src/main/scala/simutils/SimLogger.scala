@@ -26,8 +26,44 @@ import java.time.Duration
 
 import akka.actor.{Actor, ActorRef}
 import com.google.protobuf.{Any, GeneratedMessage}
-import devsmodel.MessageConverter
+import devsmodel.{OutputMessageCase, ExternalEvent, EventMessageCase, MessageConverter}
 import dmfmessages.DMFSimMessages._
+
+
+/**
+  * Message sent to tell the logger to log an external event
+  * @param event  The external event to log
+  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
+  * @tparam E The type of event
+  */
+case class LogExternalEvent[E](event: E, timeOption: Option[Duration] = None) extends Serializable
+
+/**
+  * Message sent to tell the logger to log an internal event
+  * @param event  The external event to log
+  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
+  * @tparam E The type of event
+  */
+case class LogInternalEvent[E](event: E, timeOption: Option[Duration] = None) extends Serializable
+
+/**
+  * Message sent to tell the logger to log an output event
+  * @param event  The external event to log
+  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
+  * @tparam E The type of event
+  */
+case class LogOutputEvent[E](event: E, timeOption: Option[Duration] = None) extends Serializable
+
+/**
+  * Message sent to tell the logger to log the given state
+  * @param name  The name of the state variable
+  * @param state The state to log
+  * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
+  * @tparam S  The type of the state variable
+  */
+case class LogStateCase[S](name: String, state: S, timeOption: Option[Duration] = None) extends Serializable
+
+
 
 object SimLogger {
   def buildAny[T <: GeneratedMessage](m: T): Any = Any.pack[T](m)
@@ -63,9 +99,27 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
       val eventData = convertEvent(ded.getEventData)
       logString( ded.getEventType + " event: " + eventData, ded.getExecutionTimeString )
 
+    case ev: ExternalEvent[_] =>
+      logString("EXTERNAL event: " + ev.eventData, ev.executionTime.toString)
+
+    case om: OutputMessageCase[_] =>
+      logString("OUTPUT event: " + om.output, om.t.toString)
+
+    case LogExternalEvent(e, timeOption) =>
+      logString( "External event : " + e.toString, timeOption )
+
+    case LogInternalEvent(e, timeOption) =>
+      logString( "Internal event : " + e.toString, timeOption )
+
+    case LogOutputEvent( e, timeOption ) =>
+      logString( "Output event : " + e.toString, timeOption )
+
     case ls: LogState =>
       val state = convertState(ls.getState)
       logString( ls.getVariableName + " : " + state, ls.getTimeInStateString )
+
+    case LogStateCase(name, state, timeOption) =>
+      logString(name + ": " + state, timeOption.getOrElse(currentTime).toString)
 
     case lf: LogToFile =>
       logString( lf.getLogMessage, lf.getTimeString )

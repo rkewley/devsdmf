@@ -55,7 +55,7 @@ class SynchronizationException(m: String) extends Exception(m)
 * @param state The value of the state
 * @tparam T The data type of the state
 */
-case class DynamicStateVariable[T <: GeneratedMessage](timeInState: Duration, state: T)
+case class DynamicStateVariable[T <: java.io.Serializable](timeInState: Duration, state: T)
 
 
 /**
@@ -80,7 +80,7 @@ case class DynamicStateVariable[T <: GeneratedMessage](timeInState: Duration, st
   * @param initialState
   * @tparam S
   */
-abstract class ModelStateManager[S <: GeneratedMessage](initialState: S) {
+abstract class ModelStateManager[S <: java.io.Serializable](initialState: S) {
   /**
     * Single valued [[SimEntityState]] objects to keep track of internal state for a [[ModelSimulator.DEVSModel]]
     */
@@ -101,7 +101,7 @@ abstract class ModelStateManager[S <: GeneratedMessage](initialState: S) {
     * @tparam T The data type of the state variable
     * @return The manager for the variable state.
     */
-  def buildSimEntityState[T <: GeneratedMessage](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
+  def buildSimEntityState[T <: java.io.Serializable](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
     val stateTrajectory = new TreeMap[Duration, T] + (initialState.timeInState -> initialState.state)
     new SimEntityState[T](stateTrajectory, name)
   }
@@ -119,9 +119,9 @@ abstract class ModelStateManager[S <: GeneratedMessage](initialState: S) {
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
   */
-abstract class DEVSEvent[E <: GeneratedMessage](val executionTime: Duration, val eventData: E) extends Ordered[DEVSEvent[_ <: GeneratedMessage]] {
+abstract class DEVSEvent[E <: java.io.Serializable](val executionTime: Duration, val eventData: E) extends Ordered[DEVSEvent[_ <: java.io.Serializable]] with java.io.Serializable {
 
-  override def compare(anotherEvent: DEVSEvent[_ <: GeneratedMessage]): Int = {
+  override def compare(anotherEvent: DEVSEvent[_ <: java.io.Serializable]): Int = {
     val durationCompare =  this.executionTime.compareTo(anotherEvent.executionTime)
     durationCompare match {
       case 0 =>  this.hashCode().compareTo(anotherEvent.hashCode())
@@ -139,7 +139,7 @@ abstract class DEVSEvent[E <: GeneratedMessage](val executionTime: Duration, val
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
   */
-class ExternalEvent[E <: GeneratedMessage](override val executionTime: Duration, override val eventData: E) extends DEVSEvent[E](executionTime, eventData)
+case class ExternalEvent[E <: java.io.Serializable](override val executionTime: Duration, override val eventData: E) extends DEVSEvent[E](executionTime, eventData) with java.io.Serializable
 
 /**
   * Abstract class representing an internal event within the [[ModelSimulator.DEVSModel]].  An InternalEvent will result in a
@@ -150,7 +150,7 @@ class ExternalEvent[E <: GeneratedMessage](override val executionTime: Duration,
   * @param anEvent  The data for the event
   * @tparam E  The data type for the eventData
   */
-class InternalEvent[E <: GeneratedMessage](aTime: Duration, anEvent: E) extends DEVSEvent(aTime, anEvent)
+case class InternalEvent[E <: java.io.Serializable](aTime: Duration, anEvent: E) extends DEVSEvent(aTime, anEvent) with java.io.Serializable
 
 /**
   * Abstract class that is scheduled in order to produce an output of the [[ModelSimulator.DEVSModel]]
@@ -159,7 +159,27 @@ class InternalEvent[E <: GeneratedMessage](aTime: Duration, anEvent: E) extends 
   * @param eventData The data sent as output from the model
   * @tparam E  The data type for the eventData
   */
-class OutputEvent[E <: GeneratedMessage](aTime: Duration, override val eventData: E) extends DEVSEvent(aTime, eventData)
+case class OutputEvent[E <: java.io.Serializable](aTime: Duration, override val eventData: E) extends DEVSEvent(aTime, eventData) with java.io.Serializable
+
+/**
+  * An external event message
+  *
+  * @param event  The external event to be executed by the [[ModelSimulator.DEVSModel]]
+  * @param t  The time the message is delivered
+  * @param eventIndex An index assigned to the by the [[ModelCoordinator]] to track completion of [[ExternalEvent]] bagging
+  */
+case class EventMessageCase[E <: java.io.Serializable](event: ExternalEvent[E], t: Duration, eventIndex: Long)
+
+/**
+  * A message sent by the [[ModelSimulator.DEVSModel]] to its enclosing [[ModelSimulator]] with the output data resulting
+  * from calling the [[ModelSimulator.DEVSModel.outputFunction]]
+  * It is then forwarded by the [[ModelSimulator]] to its parent
+  *
+  * @param output  The output data
+  * @param t  The time of the output
+  * @tparam O  The data type of the output
+  */
+case class OutputMessageCase[O](output: O, t: Duration)
 
 /**
   * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
@@ -245,7 +265,7 @@ object ModelSimulator {
   * Each Simulator class of the simulation will have a subclass of this one, and that subclass can be code generated from
   * knowledge of the state, properties, and events it needs to respond to.
   *
-  * @param properties  A sublcass of com.google.protobuf.GeneratedMessage the represents the static properties for the internal [[DEVSModel]]
+  * @param properties  A sublcass of java.io.Serializable that represents the static properties for the internal [[DEVSModel]]
   * @param initialTime  The initial time of the [[DEVSModel]] being simulated.  This is needed by the constructor in creating the
   *                     abstract value internal [[DEVSModel]]
   * @param initialState The initial state of the internal [[DEVSModel]]
@@ -253,7 +273,7 @@ object ModelSimulator {
   * @param randomActor  A reference to a [[simutils.random.SplitStreamActor]] to query for random number generation parameters
   * @param simLogger A reference to a [[simutils.SimLogger]] for logging simulation messages
   */
-abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <: ModelStateManager[S]]
+abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializable, M <: ModelStateManager[S]]
   (val properties: P,
    initialTime: Duration,
    initialState: S,
@@ -342,6 +362,12 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
   }
 
 
+  def handleEventMessageCase(em: EventMessageCase[_ <: java.io.Serializable]) = {
+    logDebug(em.t + " Received and bagged external event " + em.event + " with index " + em.eventIndex)
+    externalEvents = em.event :: externalEvents
+    simLogger ! em.event
+    sender() ! ModelSimulator.buildBagEventDone(em.t, em.eventIndex)
+  }
   /**
    * Receive method that handle external messages to execute the [[DEVSModel]].
    * Upon receipt of a [[GetNextTime]] message during simulation initialization, respond with a [[NextTime]] message
@@ -373,20 +399,22 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
       logDebug(outputMessage.getTimeString + " Received GenerateOutput and generated the following output: " + convertOutput(outputMessage.getOutput))
       context.parent ! outputMessage
 
+    case om: OutputMessageCase[_] =>
+      logDebug(om.t.toString + " Received GenerateOutput and generated the following output: " + om.output)
+      context.parent ! om
+
     case outputDone: OutputDone =>
       logDebug(sender().path.name + " done with output at " + outputDone.getTimeString)
       context.parent ! outputDone
 
     case e: EventMessage =>
-      val t = Duration.parse(e.getTimeString)
-      val eventIndex = e.getEventIndex
-      val devsEventData = convertEvent(e.getEvent.getEventData)
-      val externalEvent = new ExternalEvent(t, devsEventData)
-      (externalEvent, t, eventIndex)
-      logDebug(t + " Received and bagged external event " + externalEvent + " with index " + eventIndex)
-      externalEvents = externalEvent :: externalEvents
-      simLogger ! e.getEvent
-      sender() ! ModelSimulator.buildBagEventDone(t, eventIndex)
+      val time: Duration = Duration.parse(e.getTimeString)
+      val exEvent = ExternalEvent(time, convertEvent(e.getEvent.getEventData))
+      val index = e.getEventIndex
+      handleEventMessageCase(EventMessageCase(exEvent, time, index))
+
+    case emc: EventMessageCase[_] => handleEventMessageCase(emc)
+
 
     case p: ProcessEventMessages =>
       val t = Duration.parse(p.getTimeString)
@@ -463,7 +491,7 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
     * @tparam S  The data type for the model state
     * @tparam M  The data type of the [[ModelStateManager]]
     */
-  abstract class DEVSModel[P <: GeneratedMessage, R <: GeneratedMessage, S <: GeneratedMessage, M <: ModelStateManager[S]]
+  abstract class DEVSModel[P <: java.io.Serializable, R <: java.io.Serializable, S <: java.io.Serializable, M <: ModelStateManager[S]]
   (val properties: P,
    initialState: S,
    initialEvents: InitialEvents,
@@ -539,8 +567,8 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
       */
     initialEvents.getInternalEventsList().foreach { event =>
       val t: Duration = Duration.parse(event.getExecutionTimeString)
-      val eventData: GeneratedMessage = convertEvent(event.getEventData)
-      val devsEvent: DEVSEvent[_ <: GeneratedMessage] = new InternalEvent(t, eventData)
+      val eventData = convertEvent(event.getEventData)
+      val devsEvent = InternalEvent(t, eventData)
       schedule.addEvent(devsEvent)
     }
 
@@ -587,10 +615,9 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
  *
       * @param output  The message to be output
       * @param t The simulation time of the output
-      * @tparam T The type of the output message
       */
-    def addOutput[T <: GeneratedMessage](output: T, t: Duration) = {
-      schedule.addEvent(new OutputEvent[T](t, output))
+    def addOutput(output: java.io.Serializable, t: Duration) = {
+      schedule.addEvent(new OutputEvent(t, output))
     }
 
     /**
@@ -598,10 +625,9 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
  *
       * @param eventData The event to schedule
       * @param t The time of the event
-      * @tparam T The data type of the event
       */
-    def addEvent[T <: GeneratedMessage](eventData: T, t: Duration) = {
-      schedule.addEvent(new InternalEvent[T](t, eventData))
+    def addEvent(eventData: java.io.Serializable, t: Duration) = {
+      schedule.addEvent(new InternalEvent(t, eventData))
     }
 
     /**
@@ -616,8 +642,11 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
       */
     def logState: Unit = {
       state.stateVariables.foreach { stateVariable =>
-        stateVariable.getStateTrajectory.stateTrajectory.foreach { case(t, s:GeneratedMessage) =>
-          simLogger ! SimLogger.buildLogState(stateVariable.name, t, s)
+        stateVariable.getStateTrajectory.stateTrajectory.foreach {
+          case(t, s:GeneratedMessage) =>
+            simLogger ! SimLogger.buildLogState(stateVariable.name, t, s)
+          case (t, s: java.io.Serializable) =>
+            simLogger ! LogStateCase(stateVariable.name, s, Some(t))
         }
       }
     }
@@ -642,7 +671,12 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
         case Some(event) => event match {
           case o: OutputEvent[_] => internalTransitionDone(t)
           case d: DEVSEvent[_] => {
-            simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.INTERNAL, t, d.eventData.asInstanceOf[GeneratedMessage])
+            d.eventData match {
+              case g: GeneratedMessage =>
+                simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.INTERNAL, t, g)
+              case s: java.io.Serializable =>
+                simLogger ! LogInternalEvent( d.eventData, Some(t) )
+            }
             handleInternalStateTransitionData(d.eventData, t)
           }
           case _ => throw new SynchronizationException("Cannot recognize event on schedule: " + event)
@@ -708,8 +742,16 @@ abstract class ModelSimulator[P <: GeneratedMessage, S <: GeneratedMessage, M <:
       schedule.getNextSingleEvent match {
         case Some(e) => e match {
           case o: OutputEvent[_] =>
-            sim ! ModelSimulator.buildOutputMessage(o.eventData, t)
-            simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, o.eventData)
+            o.eventData match {
+              case ed: GeneratedMessage =>
+                sim ! ModelSimulator.buildOutputMessage(ed, t)
+                simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, ed)
+              case ed: java.io.Serializable =>
+                val outputMessage = OutputMessageCase(ed, t)
+                sim ! outputMessage
+                simLogger ! outputMessage
+            }
+
           case _ =>
         }
         case None =>

@@ -102,9 +102,6 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
     case ev: ExternalEvent[_] =>
       logString("EXTERNAL event: " + ev.eventData, ev.executionTime.toString)
 
-    case om: OutputMessageCase[_] =>
-      logString("OUTPUT event: " + om.output, om.t.toString)
-
     case LogExternalEvent(e, timeOption) =>
       logString( "External event : " + e.toString, timeOption )
 

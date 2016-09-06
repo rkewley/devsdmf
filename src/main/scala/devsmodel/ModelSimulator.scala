@@ -25,6 +25,7 @@ import java.time.Duration
 
 import akka.actor._
 import com.google.protobuf.{Any, GeneratedMessage}
+import devsmodel.ModelSimulator.InitialEventsType
 import dmfmessages.DMFSimMessages._
 import simutils._
 import simutils.random.{SendInitRandom, InitRandom, SimRandom}
@@ -205,6 +206,7 @@ trait MessageConverter {
 }
 
 object ModelSimulator {
+  type InitialEventsType = Either[InitialEvents, List[DEVSEvent[_ <: java.io.Serializable]]]
   def buildGenerateOutput(t: Duration): GenerateOutput = GenerateOutput.newBuilder().setTimeString(t.toString).build()
 
   def buildProcessEventMessages(t: Duration): ProcessEventMessages = ProcessEventMessages.newBuilder().setTimeString(t.toString).build()
@@ -277,7 +279,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
   (val properties: P,
    initialTime: Duration,
    initialState: S,
-   initialEvents: InitialEvents,
+   initialEvents: InitialEventsType,
    val randomActor: ActorRef,
    val simLogger: ActorRef) extends LoggingActor with UniqueNames with MessageConverter {
 
@@ -494,7 +496,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
   abstract class DEVSModel[P <: java.io.Serializable, R <: java.io.Serializable, S <: java.io.Serializable, M <: ModelStateManager[S]]
   (val properties: P,
    initialState: S,
-   initialEvents: InitialEvents,
+   initialEvents: InitialEventsType,
    initialTime: Duration,
    val simLogger: ActorRef) {
 
@@ -565,15 +567,15 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     /**
       * Adding initial events to the schedule
       */
-    initialEvents.getInternalEventsList().foreach { event =>
-      val t: Duration = Duration.parse(event.getExecutionTimeString)
-      val eventData = convertEvent(event.getEventData)
-      val devsEvent = InternalEvent(t, eventData)
-      schedule.addEvent(devsEvent)
+    val initialEventList: List[DEVSEvent[_ <: java.io.Serializable]] = initialEvents match {
+      case Left(iEvents) => iEvents.getInternalEventsList.map { event =>
+        val t: Duration = Duration.parse(event.getExecutionTimeString)
+        val eventData = convertEvent(event.getEventData)
+        InternalEvent(t, eventData)
+      }.toList
+      case Right(iEvents) => iEvents
     }
-
-
-    //initialEvents.internalEvents.foreach { event => schedule.addEvent(event) }
+    initialEventList.foreach(e => schedule.addEvent(e))
 
     /**
       * Utility method to allow implementatios of handled events to log a message to the [[simutils.SimLogger]]
@@ -704,6 +706,12 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
           throw new SynchronizationException("Executing externalStateTransition with empty external events list")
         case Some(nextEvent) =>
           externalEvents = externalEvents.tail
+          nextEvent.eventData match {
+            case g: GeneratedMessage =>
+              simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.EXTERNAL, t, g)
+            case s: java.io.Serializable =>
+              simLogger ! LogExternalEvent( nextEvent.eventData, Some(t) )
+          }
           handleExternalStateTransitionData(nextEvent.eventData, t)
       }
     }
@@ -749,7 +757,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
               case ed: java.io.Serializable =>
                 val outputMessage = OutputMessageCase(ed, t)
                 sim ! outputMessage
-                simLogger ! outputMessage
+                simLogger ! LogOutputEvent(ed, Some(t))
             }
 
           case _ =>

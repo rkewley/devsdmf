@@ -23,7 +23,6 @@ under the License.
 package devsmodel
 
 import akka.actor.ActorRef
-import com.google.protobuf.GeneratedMessage
 
 import scala.collection.immutable.TreeMap
 import java.time.Duration

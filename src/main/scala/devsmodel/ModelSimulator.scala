@@ -24,7 +24,7 @@ package devsmodel
 import java.time.Duration
 
 import akka.actor._
-import com.google.protobuf.{Any, GeneratedMessage}
+import com.google.protobuf.{Any}
 import devsmodel.ModelSimulator.InitialEventsType
 import dmfmessages.DMFSimMessages._
 import simutils._
@@ -185,19 +185,19 @@ case class OutputMessageCase[O](output: O, t: Duration)
 /**
   * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
   * an [[OutputMessage]], or a state object to the specific
-  * [[GeneratedMessage]] that holds the data
+  * [[com.google.protobuf.Message]] that holds the data
   * This class must be extended by any implementing simulation in order to convert events.  To do so, the extending
-  * trait must define an eventList, outputList, and stateList that hold default instances of the GeneratedMessages
+  * trait must define an eventList, outputList, and stateList that hold default instances of the com.gooogle.protobuf.Message
   * converted for that simulation.
   */
 trait MessageConverter {
-  val eventList: List[GeneratedMessage]
-  val outputList: List[GeneratedMessage]
-  val stateList: List[GeneratedMessage]
+  val eventList: List[com.google.protobuf.Message]
+  val outputList: List[com.google.protobuf.Message]
+  val stateList: List[com.google.protobuf.Message]
   def convertEvent(event: com.google.protobuf.Any) = convertAny(event, eventList)
   def convertOutput(output: com.google.protobuf.Any) = convertAny(output, outputList)
   def convertState(state: com.google.protobuf.Any) = convertAny(state, stateList)
-  private def convertAny(any: com.google.protobuf.Any, classes: List[GeneratedMessage]): GeneratedMessage = {
+  private def convertAny(any: com.google.protobuf.Any, classes: List[com.google.protobuf.Message]): com.google.protobuf.Message = {
     classes.find(msg => any.is(msg.getClass)) match {
       case Some(msg) => any.unpack(msg.getClass)
       case None => throw new Exception("Cannot convert com.google.protobuf.any object" + any.getTypeUrl)
@@ -227,7 +227,7 @@ object ModelSimulator {
   def buildExternalTransitionDone(t: Duration, nextTime: Duration): ExternalTransitionDone = ExternalTransitionDone.newBuilder()
     .setTimeString(t.toString).setNextTimeString(nextTime.toString).build()
 
-  def buildOutputMessage[T <: GeneratedMessage](output: T, t: Duration): OutputMessage = {
+  def buildOutputMessage[T <: com.google.protobuf.Message](output: T, t: Duration): OutputMessage = {
     val any: com.google.protobuf.Any = buildAny(output)
     OutputMessage.newBuilder().setTimeString(t.toString).setOutput(any).build()
   }
@@ -237,9 +237,9 @@ object ModelSimulator {
   def buildEventMessage(eventData: DEVSEventData, t: Duration, eventIndex: Long): EventMessage = EventMessage.newBuilder().setEvent(eventData)
       .setTimeString(t.toString).setEventIndex(eventIndex).build
 
-  def buildAny[T <: GeneratedMessage](m: T): Any = Any.pack[T](m)
+  def buildAny[T <: com.google.protobuf.Message](m: T): Any = Any.pack[T](m)
 
-  def buildDEVSEventData(eventType: DEVSEventData.EventType, t: Duration, eventData: GeneratedMessage): DEVSEventData = DEVSEventData.newBuilder().setEventType(eventType)
+  def buildDEVSEventData(eventType: DEVSEventData.EventType, t: Duration, eventData: com.google.protobuf.Message): DEVSEventData = DEVSEventData.newBuilder().setEventType(eventType)
       .setExecutionTimeString(t.toString).setEventData(buildAny(eventData)).build()
 
   def buildExecuteTransition(t: Duration): ExecuteTransition = ExecuteTransition.newBuilder().setTimeString(t.toString).build()
@@ -411,7 +411,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
     case e: EventMessage =>
       val time: Duration = Duration.parse(e.getTimeString)
-      val exEvent = ExternalEvent(time, convertEvent(e.getEvent.getEventData))
+      val exEvent = ExternalEvent(time, convertEvent(e.getEvent.getEventData) match {case s: Serializable => s})
       val index = e.getEventIndex
       handleEventMessageCase(EventMessageCase(exEvent, time, index))
 
@@ -570,7 +570,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     val initialEventList: List[DEVSEvent[_ <: java.io.Serializable]] = initialEvents match {
       case Left(iEvents) => iEvents.getInternalEventsList.map { event =>
         val t: Duration = Duration.parse(event.getExecutionTimeString)
-        val eventData = convertEvent(event.getEventData)
+        val eventData = convertEvent(event.getEventData) match {case s: Serializable => s}
         InternalEvent(t, eventData)
       }.toList
       case Right(iEvents) => iEvents
@@ -645,7 +645,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     def logState: Unit = {
       state.stateVariables.foreach { stateVariable =>
         stateVariable.getStateTrajectory.stateTrajectory.foreach {
-          case(t, s:GeneratedMessage) =>
+          case(t, s:com.google.protobuf.Message) =>
             simLogger ! SimLogger.buildLogState(stateVariable.name, t, s)
           case (t, s: java.io.Serializable) =>
             simLogger ! LogStateCase(stateVariable.name, s, Some(t))
@@ -674,7 +674,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
           case o: OutputEvent[_] => internalTransitionDone(t)
           case d: DEVSEvent[_] => {
             d.eventData match {
-              case g: GeneratedMessage =>
+              case g: com.google.protobuf.Message =>
                 simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.INTERNAL, t, g)
               case s: java.io.Serializable =>
                 simLogger ! LogInternalEvent( d.eventData, Some(t) )
@@ -707,7 +707,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
         case Some(nextEvent) =>
           externalEvents = externalEvents.tail
           nextEvent.eventData match {
-            case g: GeneratedMessage =>
+            case g: com.google.protobuf.Message =>
               simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.EXTERNAL, t, g)
             case s: java.io.Serializable =>
               simLogger ! LogExternalEvent( nextEvent.eventData, Some(t) )
@@ -751,7 +751,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
         case Some(e) => e match {
           case o: OutputEvent[_] =>
             o.eventData match {
-              case ed: GeneratedMessage =>
+              case ed: com.google.protobuf.Message =>
                 sim ! ModelSimulator.buildOutputMessage(ed, t)
                 simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, ed)
               case ed: java.io.Serializable =>

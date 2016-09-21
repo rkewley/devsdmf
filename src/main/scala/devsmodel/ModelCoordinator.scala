@@ -24,7 +24,6 @@ package devsmodel
 import java.time.Duration
 
 import akka.actor._
-import com.google.protobuf.GeneratedMessage
 import dmfmessages.DMFSimMessages._
 import simutils._
 import akka.event.{Logging, LoggingAdapter}
@@ -102,7 +101,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
   def sendEventMessage(externalEvent: ExternalEvent[_ <: java.io.Serializable], receiveActor: ActorRef): Unit = {
     val nextIndex = nextEventIndex
     val eventMessage = externalEvent.eventData match {
-      case g: GeneratedMessage =>
+      case g: com.google.protobuf.Message =>
         val devsEventData = ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.EXTERNAL, externalEvent.executionTime, g)
         ModelSimulator.buildEventMessage(devsEventData, externalEvent.executionTime, nextIndex)
       case s: java.io.Serializable =>
@@ -359,7 +358,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case om: OutputMessage =>
       val outputTime = Duration.parse(om.getTimeString)
       if (outputTime.compareTo(currentTime) == 0) {
-        val outputData = convertOutput(om.getOutput)
+        val outputData = convertOutput(om.getOutput) match {case s: Serializable => s}
         logDebug(outputTime + " Handling output event " + outputData + " from " + sender().path.name)
         handleOutputEvent(sender(), OutputEvent(outputTime, outputData))
       }
@@ -387,7 +386,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case em: EventMessage =>
       val t: Duration = Duration.parse(em.getTimeString)
       val executionTime: Duration = Duration.parse(em.getEvent.getExecutionTimeString)
-      val externalEvent = ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData))
+      val externalEvent = ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData) match {case s: Serializable => s})
       externalEvents = externalEvent :: externalEvents
       logDebug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)
@@ -471,7 +470,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case em: EventMessage =>
       val t: Duration = Duration.parse(em.getTimeString)
       val executionTime: Duration = Duration.parse(em.getEvent.getExecutionTimeString)
-      val externalEvent = new ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData))
+      val externalEvent = new ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData) match {case s: Serializable => s})
       externalEvents = externalEvent :: externalEvents
       logDebug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)

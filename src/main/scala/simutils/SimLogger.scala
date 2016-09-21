@@ -25,7 +25,7 @@ import java.io.{PrintWriter, File}
 import java.time.Duration
 
 import akka.actor.{Actor, ActorRef}
-import com.google.protobuf.{Any, GeneratedMessage}
+import com.google.protobuf.{Any}
 import devsmodel.{OutputMessageCase, ExternalEvent, EventMessageCase, MessageConverter}
 import dmfmessages.DMFSimMessages._
 
@@ -66,12 +66,12 @@ case class LogStateCase[S](name: String, state: S, timeOption: Option[Duration] 
 
 
 object SimLogger {
-  def buildAny[T <: GeneratedMessage](m: T): Any = Any.pack[T](m)
+  def buildAny[T <: com.google.protobuf.Message](m: T): Any = Any.pack[T](m)
 
   def buildLogToFile(logMessage: String, timeString: String): LogToFile = LogToFile.newBuilder()
       .setLogMessage(logMessage).setTimeString(timeString).build
 
-  def buildLogState(variableName: String, t: Duration, state: GeneratedMessage) : LogState = LogState.newBuilder()
+  def buildLogState(variableName: String, t: Duration, state: com.google.protobuf.Message) : LogState = LogState.newBuilder()
       .setVariableName(variableName).setTimeInStateString(t.toString).setState(buildAny(state)).build
 
   def buildDesignPointIteration(designPoint: Int, iteration: Int): DesignPointIteration = DesignPointIteration.newBuilder()

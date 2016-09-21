@@ -5,11 +5,14 @@ import sbtprotobuf.{ProtobufPlugin=>PB}
 lazy val simproto = {
   Project("simproto", file("simproto"))
     .settings(
-      organization := "DSE",
-      version := "1.0",
+      organization := "DMF",
+      version := "3.0-SNAPSHOT",
       crossPaths := false,
+      resolvers += "Artifactory" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local",
+      publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
+      credentials += Credentials(Path("credentials.properties").asFile),
       PB.protobufSettings,
-      version in PB.protobufConfig := "3.0.0-beta-3"
+      version in PB.protobufConfig := "3.0.2"
     )
 }
 
@@ -17,14 +20,17 @@ lazy val devsdmf = {
   Project("devs-dmf",file(".")).aggregate(simproto).dependsOn(simproto)
     .settings(
       scalaVersion := "2.11.8",
-      organization := "DSE",
-      version := "3.0",
+      organization := "DMF",
+      version := "3.0-SNAPSHOT",
+      resolvers += "Artifactory" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local",
+      publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
+      credentials += Credentials(Path("credentials.properties").asFile),
       libraryDependencies ++= Seq(
         "org.scala-lang" % "scala-reflect" % scalaVersion.value,
-        "com.typesafe.akka" %% "akka-remote" % "2.4.7",
-        "com.typesafe.akka" %% "akka-actor" % "2.4.7",
-        "com.typesafe.akka" %% "akka-testkit" % "2.4.7",
-        "com.typesafe.akka" % "akka-slf4j_2.11" % "2.4.7",
+        "com.typesafe.akka" %% "akka-remote" % "2.4.10",
+        "com.typesafe.akka" %% "akka-actor" % "2.4.10",
+        "com.typesafe.akka" %% "akka-testkit" % "2.4.10",
+        "com.typesafe.akka" % "akka-slf4j_2.11" % "2.4.10",
         "ch.qos.logback" % "logback-classic" % "1.1.7",
         "org.scalatest" %% "scalatest" % "2.2.6" % "test",
         "junit" % "junit" % "4.12" % "test",

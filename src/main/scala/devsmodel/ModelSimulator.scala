@@ -411,7 +411,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
     case e: EventMessage =>
       val time: Duration = Duration.parse(e.getTimeString)
-      val exEvent = ExternalEvent(time, convertEvent(e.getEvent.getEventData) match {case s: Serializable => s})
+      val exEvent = ExternalEvent(time, convertEvent(e.getEvent.getEventData) match {case s: java.io.Serializable => s})
       val index = e.getEventIndex
       handleEventMessageCase(EventMessageCase(exEvent, time, index))
 
@@ -570,7 +570,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     val initialEventList: List[DEVSEvent[_ <: java.io.Serializable]] = initialEvents match {
       case Left(iEvents) => iEvents.getInternalEventsList.map { event =>
         val t: Duration = Duration.parse(event.getExecutionTimeString)
-        val eventData = convertEvent(event.getEventData) match {case s: Serializable => s}
+        val eventData = convertEvent(event.getEventData) match {case s: java.io.Serializable => s}
         InternalEvent(t, eventData)
       }.toList
       case Right(iEvents) => iEvents

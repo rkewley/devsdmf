@@ -358,7 +358,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case om: OutputMessage =>
       val outputTime = Duration.parse(om.getTimeString)
       if (outputTime.compareTo(currentTime) == 0) {
-        val outputData = convertOutput(om.getOutput) match {case s: Serializable => s}
+        val outputData = convertOutput(om.getOutput) match {case s: java.io.Serializable => s}
         logDebug(outputTime + " Handling output event " + outputData + " from " + sender().path.name)
         handleOutputEvent(sender(), OutputEvent(outputTime, outputData))
       }
@@ -386,7 +386,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case em: EventMessage =>
       val t: Duration = Duration.parse(em.getTimeString)
       val executionTime: Duration = Duration.parse(em.getEvent.getExecutionTimeString)
-      val externalEvent = ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData) match {case s: Serializable => s})
+      val externalEvent = ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData) match {case s: java.io.Serializable => s})
       externalEvents = externalEvent :: externalEvents
       logDebug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)
@@ -470,7 +470,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case em: EventMessage =>
       val t: Duration = Duration.parse(em.getTimeString)
       val executionTime: Duration = Duration.parse(em.getEvent.getExecutionTimeString)
-      val externalEvent = new ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData) match {case s: Serializable => s})
+      val externalEvent = new ExternalEvent(executionTime, convertEvent(em.getEvent.getEventData) match {case s: java.io.Serializable => s})
       externalEvents = externalEvent :: externalEvents
       logDebug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)

@@ -200,7 +200,7 @@ trait MessageConverter {
   private def convertAny(any: com.google.protobuf.Any, classes: List[com.google.protobuf.Message]): com.google.protobuf.Message = {
     classes.find(msg => any.is(msg.getClass)) match {
       case Some(msg) => any.unpack(msg.getClass)
-      case None => throw new Exception("Cannot convert com.google.protobuf.any object" + any.getTypeUrl)
+      case None => throw new Exception("Cannot convert com.google.protobuf.any object: " + any.getTypeUrl)
     }
   }
 }
@@ -515,6 +515,27 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     def log_debug(s: String) = logDebug(s)
 
     /**
+      * Utility function to enable actor logging by the implementing trait
+ *
+      * @param s  The string to be written by the logger
+      */
+    def log_info(s: String) = log.info(s)
+
+    /**
+      * Utility function to enable actor logging by the implementing trait
+ *
+      * @param s  The string to be written by the logger
+      */
+    def log_warning(s: String) = log.warning(s)
+
+    /**
+      * Utility function to enable actor logging by the implementing trait
+ *
+      * @param s  The string to be written by the logger
+      */
+    def log_error(s: String) = log.error(s)
+
+    /**
       * Utility function called to build the [[ModelStateManager]] for this model
  *
       * @param state The initial state of the model
@@ -534,6 +555,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       * A [[ActorRef]] reference to the enclosing [[ModelSimulator]] so that implementing traits can send messages to it
       */
     val sim = self
+    val simContext = context
 
     /**
       * A [[ActorContext]] reference to the context for the enclosing [[ModelSimulator]] so that implementing traits can use it

@@ -555,7 +555,6 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       * A [[ActorRef]] reference to the enclosing [[ModelSimulator]] so that implementing traits can send messages to it
       */
     val sim = self
-    val simContext = context
 
     /**
       * A [[ActorContext]] reference to the context for the enclosing [[ModelSimulator]] so that implementing traits can use it

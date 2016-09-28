@@ -22,12 +22,14 @@ under the License.
 package simutils
 
 import java.io.{PrintWriter, File}
-import akka.actor.Actor
+import akka.actor.{Actor, Props}
 import dmfmessages.DMFSimMessages._
 
 object FileLogger {
   def buildCloseFile: CloseFile = CloseFile.newBuilder().build()
   def buildFileClosed: FileClosed = FileClosed.newBuilder().build()
+
+  def props(fileName:String) = Props( new FileLogger( fileName ) )
 }
 
 /**

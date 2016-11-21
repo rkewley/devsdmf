@@ -30,13 +30,18 @@ import devsmodel.{OutputMessageCase, ExternalEvent, EventMessageCase, MessageCon
 import dmfmessages.DMFSimMessages._
 
 
+abstract class LogEvent[E] extends Serializable {
+  def event: E
+  def timeOption: Option[Duration]
+}
+
 /**
   * Message sent to tell the logger to log an external event
   * @param event  The external event to log
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam E The type of event
   */
-case class LogExternalEvent[E](event: E, timeOption: Option[Duration] = None) extends Serializable
+case class LogExternalEvent[E](event: E, timeOption: Option[Duration] = None) extends LogEvent[E]
 
 /**
   * Message sent to tell the logger to log an internal event
@@ -44,7 +49,7 @@ case class LogExternalEvent[E](event: E, timeOption: Option[Duration] = None) ex
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam E The type of event
   */
-case class LogInternalEvent[E](event: E, timeOption: Option[Duration] = None) extends Serializable
+case class LogInternalEvent[E](event: E, timeOption: Option[Duration] = None) extends LogEvent[E]
 
 /**
   * Message sent to tell the logger to log an output event
@@ -52,7 +57,7 @@ case class LogInternalEvent[E](event: E, timeOption: Option[Duration] = None) ex
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam E The type of event
   */
-case class LogOutputEvent[E](event: E, timeOption: Option[Duration] = None) extends Serializable
+case class LogOutputEvent[E](event: E, timeOption: Option[Duration] = None) extends LogEvent[E]
 
 /**
   * Message sent to tell the logger to log the given state
@@ -61,7 +66,7 @@ case class LogOutputEvent[E](event: E, timeOption: Option[Duration] = None) exte
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam S  The type of the state variable
   */
-case class LogStateCase[S](name: String, state: S, timeOption: Option[Duration] = None) extends Serializable
+case class LogStateCase[S](name: String, event: S, timeOption: Option[Duration] = None) extends Serializable
 
 
 

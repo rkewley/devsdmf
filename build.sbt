@@ -8,9 +8,7 @@ lazy val simproto = {
       organization := "DMF",
       version := "3.0-SNAPSHOT",
       crossPaths := false,
-      resolvers += "Artifactory" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local",
       publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
-      credentials += Credentials(Path("credentials.properties").asFile),
       PB.protobufSettings,
       version in PB.protobufConfig := "3.0.2"
     )
@@ -22,9 +20,7 @@ lazy val devsdmf = {
       scalaVersion := "2.11.8",
       organization := "DMF",
       version := "3.0-SNAPSHOT",
-      resolvers += "Artifactory" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local",
       publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
-      credentials += Credentials(Path("credentials.properties").asFile),
       libraryDependencies ++= Seq(
         "org.scala-lang" % "scala-reflect" % scalaVersion.value,
         "com.typesafe.akka" %% "akka-remote" % "2.4.10",
@@ -45,9 +41,3 @@ lazy val devsdmf = {
       }
     )
 }
-
-
-
-
-
-

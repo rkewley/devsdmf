@@ -29,32 +29,52 @@ object FileLogger {
   def buildCloseFile: CloseFile = CloseFile.newBuilder().build()
   def buildFileClosed: FileClosed = FileClosed.newBuilder().build()
 
-  def props(fileName:String) = Props( new FileLogger( fileName ) )
+  def props(fileName:String, fmt: Format = new BasicFormat) = Props( new FileLogger( fileName, fmt ) )
+}
+
+/**  Format trait
+  *
+  *  Allow customization of how messages are written to a file.
+  * */
+trait Format {
+  def begin(): Option[String]
+
+  def end(): Option[String]
+
+  def format( a: Any ): Option[String]
+}
+
+class BasicFormat extends Format {
+  def begin(): Option[String] = None
+
+  def end(): Option[String] = None
+
+  def format( a: Any ): Option[String] = a match {
+    case s: String => Some(s)
+    case _ => None
+  }
 }
 
 /**
-  * A class designed to log simulation messages.  The [[devsmodel.RootCoordinator]] sends messages to this logger
-  * to keep the current time updated.  Any actor in the simulation can then log messages received and state data to this
-  * logger with time parameters.
- *
+  * A class designed to log messages to a file.  A Format object may
+  * be provided which allows custom begin and end block and converts
+  * messages to String.  Be default, only String messages are written
+  * to the file.
+  *
   * @param fileName  The filename to which log messages are written
   */
-class FileLogger(val fileName: String) extends Actor {
+class FileLogger(val fileName: String, val fmt: Format = new BasicFormat ) extends Actor {
+  var closed = false
   val pw = new PrintWriter(new File(fileName))
+  fmt.begin.map( s => write(s) )
 
   def receive = {
-    case s: String =>
-      try {
-        pw.write( s )
-      }
-      catch {
-        case e: Exception =>
-          println("Could not write to file: " + fileName)
-      }
-
     case c: CloseFile =>
-      pw.close()
+      close()
       sender ! FileLogger.buildFileClosed
+
+    case a: Any =>
+      fmt.format( a ).map( s => write(s) )
   }
 
   /**
@@ -62,6 +82,24 @@ class FileLogger(val fileName: String) extends Actor {
     */
   override def postStop() {
     // No harm in calling this twice.
-    pw.close()
+    close()
+  }
+
+  private def close() {
+    if( !closed ) {
+      fmt.end.map( s => write( s ) )
+      pw.close()
+      closed = true
+    }
+  }
+
+  private def write( s: String ) {
+    try {
+      pw.write( s )
+    }
+    catch {
+      case e: Exception =>
+        println("Could not write to file: " + fileName)
+    }
   }
 }

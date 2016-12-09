@@ -69,32 +69,28 @@ message BagEventDone {
  * @param timeString  The time it is done
  * @param nextTimeString The next scheduled internal state transition
  */
-message TransitionDone {
+message StateTransitionDone {
     string timeString = 1;
     string nextTimeString = 2;
 }
 
 /**
- * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of an internal state transition
+ * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of an internal or external state transition
  *
  * @param timeString  The time it is done
- * @param nextTimeString The next scheduled internal state transition
  */
-message InternalTransitionDone {
+message TransitionDone {
     string timeString = 1;
-    string nextTimeString = 2;
 }
 
 /**
  * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of an external state transition
  *
  * @param timeString  The time it is done
- * @param nextTimeString The next scheduled internal state transition
  */
-message ExternalTransitionDone {
-    string timeString = 1;
-    string nextTimeString = 2;
-}
+// message ExternalTransitionDone {
+//     string timeString = 1;
+// }
 
 /**
  * It is also sent by a [[ModelSimulator.DEVSModel]] to the [[ModelSimulator]] upon completion of a confluent state transition
@@ -104,7 +100,6 @@ message ExternalTransitionDone {
  */
 message ConfluentTransitionDone {
     string timeString = 1;
-    string nextTimeString = 2;
 }
 
 /**

@@ -54,12 +54,12 @@ abstract class RootCoordinator(val initialTime: Duration,
 
   override val supervisorStrategy =
     OneForOneStrategy() {
-      case e: Exception => 
+      case e: Exception =>
         simLogger ! SimLogger.buildLogToFile(e.toString, currentTime.toString)
         self ! PoisonPill
         SupervisorStrategy.Stop
     }
-  
+
   /**
     * Manages the parallel random streams for the simulation
     */
@@ -152,7 +152,7 @@ abstract class RootCoordinator(val initialTime: Duration,
    * Otherwise, [[terminate]] the simulation.
    */
   def awaitingTransitionDone: Receive = {
-    case td: TransitionDone =>
+    case td: StateTransitionDone =>
       val t: Duration = Duration.parse(td.getTimeString)
       val nextTransition: Duration = Duration.parse(td.getNextTimeString)
       logDebug(t + " " + sender().path.name + " completed state transition.")

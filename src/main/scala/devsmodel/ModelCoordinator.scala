@@ -52,7 +52,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
         SupervisorStrategy.Escalate
         }
       }
-  
+
   /**
    * A map containing all of the subordinate models and the scheduled time of their next internal state transition
    */
@@ -234,7 +234,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       synchronizeSet = (influences ::: imminents).distinct
       if (synchronizeSet.isEmpty) {
         logDebug("Synchronize set is empty, transitioning to processingOutput")
-        context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
+        context.parent ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
         context.become(processingOutput)
       } else {
         logDebug(t + "sending ExeucteTranisiton to synchronize set: " + synchronizeSet)
@@ -502,7 +502,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
    * [[processingOutput]] state.
    */
   def processingTransitions: Receive = {
-    case td: TransitionDone=>
+    case td: StateTransitionDone =>
       val t: Duration = Duration.parse(td.getTimeString)
       val nextTime: Duration = Duration.parse(td.getNextTimeString)
       if (t.compareTo(currentTime) >= 0 && t.compareTo(nextTime) <= 0) {
@@ -511,7 +511,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
         nextMap.put(sender(), nextTime)
         if (synchronizeSet.isEmpty) {
           currentTime = t
-          context.parent ! ModelSimulator.buildTransitionDone(currentTime, getNextTime)
+          context.parent ! ModelSimulator.buildStateTransitionDone(currentTime, getNextTime)
           logDebug(t + " All transitions complete.  Getting ready to process output.")
           context.become(processingOutput)
         } else {

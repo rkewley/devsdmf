@@ -186,21 +186,78 @@ case class OutputMessageCase[O](output: O, t: Duration)
   * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
   * an [[OutputMessage]], or a state object to the specific
   * [[com.google.protobuf.Message]] that holds the data
-  * This class must be extended by any implementing simulation in order to convert events.  To do so, the extending
-  * trait must define an eventList, outputList, and stateList that hold default instances of the com.gooogle.protobuf.Message
-  * converted for that simulation.
+  * This class must be extended by any implementing simulation in order to convert events.
   */
 trait MessageConverter {
+  def convertEvent(event: com.google.protobuf.Any): com.google.protobuf.Message
+  def convertOutput(output: com.google.protobuf.Any): com.google.protobuf.Message
+  def convertState(state: com.google.protobuf.Any): com.google.protobuf.Message
+}
+
+/**
+  * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
+  * an [[OutputMessage]], or a state object to the specific
+  * [[com.google.protobuf.Message]] that holds the data
+  *
+  * This class can be extended in order to implement the
+  * [[MessageConverter]] trait using lists of messages.  To do so, the
+  * extending implementation must define an eventList, outputList, and
+  * stateList that hold default instances of the
+  * com.gooogle.protobuf.Message converted for that simulation.
+  */
+trait MessageConverterLists extends MessageConverter {
   val eventList: List[com.google.protobuf.Message]
   val outputList: List[com.google.protobuf.Message]
   val stateList: List[com.google.protobuf.Message]
-  def convertEvent(event: com.google.protobuf.Any) = convertAny(event, eventList)
-  def convertOutput(output: com.google.protobuf.Any) = convertAny(output, outputList)
-  def convertState(state: com.google.protobuf.Any) = convertAny(state, stateList)
+  override def convertEvent(event: com.google.protobuf.Any) =
+    convertAny(event, eventList)
+  override def convertOutput(output: com.google.protobuf.Any) =
+    convertAny(output, outputList)
+  override def convertState(state: com.google.protobuf.Any) =
+    convertAny(state, stateList)
   private def convertAny(any: com.google.protobuf.Any, classes: List[com.google.protobuf.Message]): com.google.protobuf.Message = {
     classes.find(msg => any.is(msg.getClass)) match {
       case Some(msg) => any.unpack(msg.getClass)
       case None => throw new Exception("Cannot convert com.google.protobuf.any object: " + any.getTypeUrl)
+    }
+  }
+}
+
+/**
+  * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
+  * an [[OutputMessage]], or a state object to the specific
+  * [[com.google.protobuf.Message]] that holds the data
+  *
+  * This class can be extended in order to implement the
+  * [[MessageConverter]] trait using lists of messages.  To do so, the
+  * extending implementation must define an packageMap, which maps the
+  * protobuf namespace to the java namespace.  The trait then uses
+  * introspection to convert messages.
+  */
+trait MessageConverterMap extends MessageConverter {
+  val packageMap: Map[String,String]
+  val typeUrlPattern = "type.googleapis.com/([\\w\\.]+)\\.(\\w+)".r
+
+  override def convertEvent(event: com.google.protobuf.Any) = convertAny(event)
+  override def convertOutput(output: com.google.protobuf.Any) = convertAny(output)
+  override def convertState(state: com.google.protobuf.Any) = convertAny(state)
+
+  private def typeUrlToJavaClassname( typeUrl: String ): String = {
+    val typeUrlPattern( pkg, name ) = typeUrl
+
+    packageMap.get(pkg).map( v => v + "$" + name )
+      .getOrElse( throw new Exception("Cannot find type for " + typeUrl ) )
+  }
+
+  private def convertAny( any: com.google.protobuf.Any ): com.google.protobuf.Message = {
+    val clazz = Class.forName( typeUrlToJavaClassname( any.getTypeUrl ) )
+    val defaultMethod = clazz.getMethod("getDefaultInstance")
+
+    defaultMethod.invoke(null) match {
+      case a: com.google.protobuf.Message => any.unpack(a.getClass)
+
+      case _ => throw new Exception(
+        "Cannot convert com.google.protobuf.any to " + clazz.getName)
     }
   }
 }
@@ -218,14 +275,14 @@ object ModelSimulator {
 
   def buildReadyToProcessEventMessages(t: Duration): ReadyToProcessMessages = ReadyToProcessMessages.newBuilder().setTimeString(t.toString).build()
 
-  def buildTransitionDone(t: Duration, nextTime: Duration): TransitionDone = TransitionDone.newBuilder()
-      .setTimeString(t.toString).setNextTimeString(nextTime.toString).build()
-
-  def buildInternalTransitionDone(t: Duration, nextTime: Duration): InternalTransitionDone = InternalTransitionDone.newBuilder()
+  def buildStateTransitionDone(t: Duration, nextTime: Duration): StateTransitionDone = StateTransitionDone.newBuilder()
     .setTimeString(t.toString).setNextTimeString(nextTime.toString).build()
 
-  def buildExternalTransitionDone(t: Duration, nextTime: Duration): ExternalTransitionDone = ExternalTransitionDone.newBuilder()
-    .setTimeString(t.toString).setNextTimeString(nextTime.toString).build()
+  def buildTransitionDone(t: Duration): TransitionDone = TransitionDone.newBuilder()
+    .setTimeString(t.toString).build()
+
+  // def buildExternalTransitionDone(t: Duration): ExternalTransitionDone = ExternalTransitionDone.newBuilder()
+  //   .setTimeString(t.toString).build()
 
   def buildOutputMessage[T <: com.google.protobuf.Message](output: T, t: Duration): OutputMessage = {
     val any: com.google.protobuf.Any = buildAny(output)
@@ -447,28 +504,37 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
           + getCurrentTime + " and next time " + devs.timeAdvanceFunction)
       }
 
-    case itd: InternalTransitionDone =>
+    case itd: TransitionDone =>
       val t = Duration.parse(itd.getTimeString)
       if(externalEvents.isEmpty) {
         devs.currentTime = t
-        context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
+        context.parent ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
       } else {
         devs.externalStateTransition(t)
       }
 
-    case etd: ExternalTransitionDone =>
-      val t = Duration.parse(etd.getTimeString)
-      devs.currentTime = t
-      if (externalEvents.isEmpty)
-        context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
-      else
-        devs.externalStateTransition(t)
+    // case itd: InternalTransitionDone =>
+    //   val t = Duration.parse(itd.getTimeString)
+    //   if(externalEvents.isEmpty) {
+    //     devs.currentTime = t
+    //     context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
+    //   } else {
+    //     devs.externalStateTransition(t)
+    //   }
+
+    // case etd: ExternalTransitionDone =>
+    //   val t = Duration.parse(etd.getTimeString)
+    //   devs.currentTime = t
+    //   if (externalEvents.isEmpty)
+    //     context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
+    //   else
+    //     devs.externalStateTransition(t)
 
     case ctd: ConfluentTransitionDone =>
       val t = Duration.parse(ctd.getTimeString)
       externalEvents = List()
       devs.currentTime = t
-      context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
+      context.parent ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
 
     case t: Terminate =>
       preTerminate()
@@ -612,15 +678,28 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     }
 
     /**
+      * Utility method called upon completion of
+      * [[internalStateTransition]] or [[externalStateTransition]] to
+      * have the enclosing [[ModelSimulator]] to send an
+      * [[TransitionDone]] to its parent [[ModelCoordinator]]
+      *
+      * @param t The time of the event transition
+      */
+    def transitionDone(t: Duration) = {
+      logDebug(t + " Completed internal transition.")
+      sim ! ModelSimulator.buildTransitionDone(t)
+    }
+
+    /**
       * Utility method called upon completion of [[internalStateTransition]] to have the enclosing [[ModelSimulator]]
       * to send an [[InternalTransitionDone]] to its parent [[ModelCoordinator]]
  *
       * @param t The time of the event transition
       */
-    def internalTransitionDone(t: Duration) = {
-      logDebug(t + " Completed internal transition.")
-      sim ! ModelSimulator.buildInternalTransitionDone(t, getNextTime)
-    }
+    // def internalTransitionDone(t: Duration) = {
+    //   logDebug(t + " Completed internal transition.")
+    //   sim ! ModelSimulator.buildInternalTransitionDone(t)
+    // }
 
     /**
       * Utility method called upon completion of [[externalStateTransition]] to have the enclosing [[ModelSimulator]]
@@ -628,10 +707,10 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
  *
       * @param t The time of the event transition
       */
-    def externalTransitionDone(t: Duration) = {
-      logDebug(t + " Completed external transition.")
-      sim ! ModelSimulator.buildExternalTransitionDone(t, getNextTime)
-    }
+    // def externalTransitionDone(t: Duration) = {
+    //   logDebug(t + " Completed external transition.")
+    //   sim ! ModelSimulator.buildExternalTransitionDone(t)
+    // }
 
     /**
       * A utility method that allows handling event implementations to schedule an output event.
@@ -692,7 +771,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       logDebug(t + " executing internal state transition")
       schedule.getAndRemoveNextSingleEvent match {
         case Some(event) => event match {
-          case o: OutputEvent[_] => internalTransitionDone(t)
+          case o: OutputEvent[_] => transitionDone(t)
           case d: DEVSEvent[_] => {
             d.eventData match {
               case g: com.google.protobuf.Message =>
@@ -724,7 +803,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       val nextEventOption = externalEvents.headOption
       nextEventOption match {
         case None =>
-          throw new SynchronizationException("Executing externalStateTransition with empty external events list")
+          throw new SynchronizationException("Executing stateTransition with empty external events list")
         case Some(nextEvent) =>
           externalEvents = externalEvents.tail
           nextEvent.eventData match {

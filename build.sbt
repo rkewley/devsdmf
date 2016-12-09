@@ -6,7 +6,7 @@ lazy val simproto = {
   Project("simproto", file("simproto"))
     .settings(
       organization := "DMF",
-      version := "3.0-SNAPSHOT",
+      version := "3.1-SNAPSHOT",
       crossPaths := false,
       publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
       PB.protobufSettings,
@@ -19,7 +19,7 @@ lazy val devsdmf = {
     .settings(
       scalaVersion := "2.11.8",
       organization := "DMF",
-      version := "3.0-SNAPSHOT",
+      version := "3.1-SNAPSHOT",
       publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
       libraryDependencies ++= Seq(
         "org.scala-lang" % "scala-reflect" % scalaVersion.value,

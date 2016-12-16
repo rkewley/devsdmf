@@ -392,7 +392,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)
 
     case EventMessageCase(event, t, eventIndex) =>
-      val externalEvent = ExternalEvent(t, event)
+      val externalEvent = event
       externalEvents = externalEvent :: externalEvents
       logDebug(t + " Bagging external event " + externalEvent + " with index " + eventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, eventIndex)

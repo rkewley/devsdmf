@@ -215,7 +215,7 @@ trait MessageConverterLists extends MessageConverter {
     convertAny(output, outputList)
   override def convertState(state: com.google.protobuf.Any) =
     convertAny(state, stateList)
-  private def convertAny(any: com.google.protobuf.Any, classes: List[com.google.protobuf.Message]): com.google.protobuf.Message = {
+  protected def convertAny(any: com.google.protobuf.Any, classes: List[com.google.protobuf.Message]): com.google.protobuf.Message = {
     classes.find(msg => any.is(msg.getClass)) match {
       case Some(msg) => any.unpack(msg.getClass)
       case None => throw new Exception("Cannot convert com.google.protobuf.any object: " + any.getTypeUrl)
@@ -249,7 +249,7 @@ trait MessageConverterMap extends MessageConverter {
       .getOrElse( throw new Exception("Cannot find type for " + typeUrl ) )
   }
 
-  private def convertAny( any: com.google.protobuf.Any ): com.google.protobuf.Message = {
+  protected def convertAny( any: com.google.protobuf.Any ): com.google.protobuf.Message = {
     val clazz = Class.forName( typeUrlToJavaClassname( any.getTypeUrl ) )
     val defaultMethod = clazz.getMethod("getDefaultInstance")
 

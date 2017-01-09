@@ -233,15 +233,15 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     if (awaitingBagEvents.isEmpty) {
       synchronizeSet = (influences ::: imminents).distinct
       if (synchronizeSet.isEmpty) {
-        logDebug("Synchronize set is empty, transitioning to processingOutput")
         context.parent ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
+        logDebug("Become: Synchronize set is empty, transitioning from passingMessages to processingOutput")
         context.become(processingOutput)
       } else {
         logDebug(t + "sending ExeucteTranisiton to synchronize set: " + synchronizeSet)
         synchronizeSet.foreach(s => s ! ModelSimulator.buildExecuteTransition(currentTime))
         imminents = List()
         influences = List()
-        logDebug("awaitingBagEvents is empty.  Tranitioning to processingTransitions phase.")
+        logDebug("Become: awaitingBagEvents is empty.  Transitioning from passingMessages to processingTransitions phase.")
         context.become(processingTransitions)
       }
     }
@@ -301,12 +301,32 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       logDebug(t + " Received NextTime from " + sender().path.name + ". Awaiting " + awaitingNextTime.size + " more.")
       if (awaitingNextTime.isEmpty) {
         context.parent ! ModelSimulator.buildNextTime(getNextTime)
-        logDebug(t + " Received all NextTime messages.  Now processing output.")
+        logDebug("Become: " + t + " Received all NextTime messages.  Transitioning from receive to processingOutput.")
         context.become(processingOutput)
       }
     case m: Any=>
-      throw new SynchronizationException("Recieved message in recieve state with no handler: " + m)
+      throw new SynchronizationException("Received message in recieve state with no handler: [" + m.getClass + "] " + m)
   }
+
+
+  def generateOutput(g: GenerateOutput): Unit = {
+    val t = Duration.parse(g.getTimeString)
+    val imminentSet = getImminentSet
+    if (t.compareTo(imminentSet.nextTime) == 0) {
+      currentTime = t
+      imminents = imminentSet.imminents
+      awaitingOutputDone = imminents
+      logDebug(t + "Getting output from imminent set:")
+      imminents.foreach { i =>
+        logDebug(i.path.name + " is in imminent set.")
+        i ! ModelSimulator.buildGenerateOutput(t)
+      }
+    }
+    else {
+      throw new SynchronizationException(t + " in processing output, time in GenerateOutput " + t + " does not match next time: " + getNextTime)
+    }
+  }
+
 
   /**
    * This is the behavior of the ModelCoordinator when it is processing output from subordinate models.
@@ -328,21 +348,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
    */
   def processingOutput: Receive = {
     case g: GenerateOutput =>
-      val t = Duration.parse(g.getTimeString)
-      val immintentSet = getImminentSet
-      if (t.compareTo(immintentSet.nextTime) == 0) {
-        currentTime = t
-        imminents = immintentSet.imminents
-        awaitingOutputDone = imminents
-        logDebug(t + "Getting output from imminent set:")
-        imminents.foreach { i =>
-          logDebug(i.path.name + " is in imminent set.")
-          i ! ModelSimulator.buildGenerateOutput(t)
-        }
-      }
-      else {
-        throw new SynchronizationException(t + " in processing output, time in GenerateOutput " + t + " does not match next time: " + getNextTime)
-      }
+      generateOutput(g)
 
     case od: OutputDone =>
       val t: Duration = Duration.parse(od.getTimeString)
@@ -400,22 +406,23 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case p: ProcessEventMessages =>
       subordinates().foreach(_ ! p)
       awaitingMessageProcessing = subordinates().toList
-      logDebug(p.getTimeString + " Received ProcessEventMessages from " + sender + " Sending to subordinates.")
+      logDebug(p.getTimeString + " Received ProcessEventMessages from " + sender + " Sending to " + awaitingMessageProcessing.size + " subordinates.")
       if(awaitingMessageProcessing.isEmpty) {
         throw new SynchronizationException("Illegal ModelCoordinator with no subordinates.")
       }
 
     case rpm: ReadyToProcessMessages =>
       val t: Duration = Duration.parse(rpm.getTimeString)
-      logDebug(t + " Received ReadyToProcessMessages from " + sender)
       awaitingMessageProcessing = awaitingMessageProcessing.filterNot(_ == sender)
-      logDebug(t + " awaitingMessageProcessing stil has " + awaitingMessageProcessing.size + " members.")
+      logDebug(t + " Received ReadyToProcessMessages from " + sender + ".  awaitingMessageProcessing has " + awaitingMessageProcessing.size + " members.")
       if (awaitingMessageProcessing.isEmpty) {
         context.parent ! rpm
         logDebug(t + "Done processing messages.")
         if (imminents.nonEmpty || externalEvents.nonEmpty) {
-          logDebug("Tranistioning to passing messages state.")
+          logDebug("Become: Transitioning from processingOutput to passingMessages.")
           context.become(passingMessages)
+        } else {
+          logDebug("Become: NOT Transitioning from processingOutput")
         }
       }
 
@@ -432,9 +439,17 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
         context.parent ! td
       }
 
-    case m: Any=>
-      throw new SynchronizationException("Recieved message from " + sender + " in processingOutput state with no handler: " + m)
+    case et: ExecuteTransition =>
+      if( externalEvents.nonEmpty ) {
+        logDebug("Become: Transitioning from processingOutput to passingMessages due to external events.")
+        context.become(passingMessages)
+        self ! et
+      } else {
+        throw new SynchronizationException("In processingOutput, got ExecuteTransition with no external events.")
+      }
 
+    case m: Any=>
+      throw new SynchronizationException("Received message from " + sender + " in processingOutput state with no handler: [" + m.getClass + "] " + m)
   }
 
   /**
@@ -489,7 +504,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       checkDonePassingMessages(t)
 
     case m: Any=>
-      throw new SynchronizationException(self.path + "Recieved message from " + sender + " in passingMessages state with no handler: " + m)
+      throw new SynchronizationException(self.path + "Received message from " + sender + " in passingMessages state with no handler: [" + m.getClass + "] " + m)
   }
 
   /**
@@ -512,7 +527,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
         if (synchronizeSet.isEmpty) {
           currentTime = t
           context.parent ! ModelSimulator.buildStateTransitionDone(currentTime, getNextTime)
-          logDebug(t + " All transitions complete.  Getting ready to process output.")
+          logDebug("Become: " + t + " All transitions complete.  Transitioning from processingTransitions to processingOutput")
           context.become(processingOutput)
         } else {
           logDebug(t + " Still have " + synchronizeSet.size + " subordinates executing transition.")
@@ -523,7 +538,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
           " is not between current time: " + currentTime + " and next scheduled transition " + nextTime)
       }
     case m: Any=>
-      throw new SynchronizationException("Recieved message in processingTransitions state with no handler: " + m)
+      throw new SynchronizationException("Received message in processingTransitions state with no handler: [" + m.getClass + "] " + m)
   }
 
 }

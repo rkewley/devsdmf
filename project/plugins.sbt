@@ -1,1 +1,1 @@
-addSbtPlugin("com.github.gseitz" % "sbt-protobuf" % "0.5.2")
+addSbtPlugin("com.github.gseitz" % "sbt-protobuf" % "0.6.3")

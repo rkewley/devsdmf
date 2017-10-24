@@ -853,12 +853,13 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
             o.eventData match {
               case ed: com.google.protobuf.Message =>
                 sim ! ModelSimulator.buildOutputMessage(ed, t)
-                simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, ed)
+                //simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, ed)
               case ed: java.io.Serializable =>
                 val outputMessage = OutputMessageCase(ed, t)
                 sim ! outputMessage
-                simLogger ! LogOutputEvent(ed, Some(t))
+                //simLogger ! LogOutputEvent(ed, Some(t))
             }
+            simLogger ! LogOutputEvent(o.eventData, Some(t))
 
           case _ =>
         }

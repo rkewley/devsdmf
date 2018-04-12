@@ -104,13 +104,20 @@ abstract class RootCoordinator(val initialTime: Duration,
   }
 
   /**
+    *  Actor receive method calls receiveMessages and forwards to receiveCustomMessages if unhandled
+    */
+  def receive = {
+    receiveMessages orElse receiveCustomMessages
+  }
+
+  /**
    * Upon receipt of a [[StartSimulation]] message, initialize the simulation by sending a [[GetNextTime]] to the
    * [[topCoordinator]].
    *
    * Upon receipt of a [[NextTime]] message, send a [[dmfmessages.DMFSimMessages.GenerateOutput]] message to the [[topCoordinator]] in order to
    * begin simulation execution.  Then transition to the [[awaitingOutputDone]] state.
    */
-  def receive = {
+  def receiveMessages: Receive = {
 
     case s: StartSimulation =>
       simLogger ! designPointIteration
@@ -122,6 +129,16 @@ abstract class RootCoordinator(val initialTime: Duration,
       simLogger ! nt
       context.become(awaitingOutputDone)
       logDebug("Received next time of " + nt.getTimeString + " from " + sender().path.name)
+
+  }
+
+  /**
+    *  This method can be overridden to receive custom user messages by the RootCoordinator actor
+    */
+  def receiveCustomMessages: Receive = {
+
+    case s =>
+      log.warning(s"Received unknown message ${s.getClass.getName}")
 
   }
 

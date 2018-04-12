@@ -5,7 +5,7 @@ lazy val simproto = {
     .settings(
       scalaVersion := "2.12.3",
       organization := "DMF",
-      version := "3.2-SNAPSHOT",
+      version := "3.4-SNAPSHOT",
       crossPaths := false,
       publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
       credentials += Credentials(Path.userHome / ".ivy2" / ".credentials"),
@@ -19,7 +19,7 @@ lazy val devsdmf = {
     .settings(
       scalaVersion := "2.12.3",
       organization := "DMF",
-      version := "3.2-SNAPSHOT",
+      version := "3.4-SNAPSHOT",
       publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
       credentials += Credentials(Path.userHome / ".ivy2" / ".credentials"),
       libraryDependencies ++= Seq(

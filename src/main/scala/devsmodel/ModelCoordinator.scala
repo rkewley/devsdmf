@@ -269,6 +269,17 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
   def handleOutputEvent(eventSender: ActorRef, output: OutputEvent[_ <: java.io.Serializable])
 
   /**
+   * This method may be overridden by subclasses of ModelCoordinator to enable more complex routing.  By default, it invokes [[handleOutputEvent]].
+   *
+   *
+   * @param eventSender  The subordinate model from which the output is recieved
+   * @param output  The output message received
+   */
+  def routeOutputEvent(eventSender: ActorRef, output: OutputEvent[_ <: java.io.Serializable]) {
+    handleOutputEvent( eventSender, output )
+  }
+
+  /**
    * This is another important abastract method that must be overridden by subclasses of ModelCoordinator.  This function
    * will route any external event messages to the appropriate subordinate models.  It will process those events
    * through a translation function as necessary.
@@ -278,6 +289,16 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
    * @param externalEvent  The external event to be handled
    */
   def handleExternalEvent(externalEvent: ExternalEvent[_ <: java.io.Serializable])
+
+  /**
+   * This method may be overridden by subclasses of ModelCoordinator to enable more complex routing.  By default, it invokes [[handleExternalEvent]].
+   *
+   *
+   * @param externalEvent  The external event to be routed
+   */
+  def routeExternalEvent(externalEvent: ExternalEvent[_ <: java.io.Serializable]) {
+    handleExternalEvent( externalEvent )
+  }
 
   /**
    * The ModelCoordinator is in this state only during initialization.  Upon receipt of a [[GetNextTime]] message, send a
@@ -366,7 +387,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       if (outputTime.compareTo(currentTime) == 0) {
         val outputData = convertOutput(om.getOutput) match {case s: java.io.Serializable => s}
         logDebug(outputTime + " Handling output event " + outputData + " from " + sender().path.name)
-        handleOutputEvent(sender(), OutputEvent(outputTime, outputData))
+        routeOutputEvent(sender(), OutputEvent(outputTime, outputData))
       }
       else {
         throw new SynchronizationException(outputTime + " in processing output, time in OutputMessage " + outputTime + " does not match current time: " + currentTime)
@@ -375,7 +396,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     case OutputMessageCase(output: java.io.Serializable, t) =>
       if (t.compareTo(currentTime) == 0) {
         logDebug(t + " Handling output event " + output + " from " + sender().path.name)
-        handleOutputEvent(sender(), OutputEvent(t, output))
+        routeOutputEvent(sender(), OutputEvent(t, output))
       }
       else {
         throw new SynchronizationException(t + " in processing output, time in OutputMessage " + t + " does not match current time: " + currentTime)
@@ -469,9 +490,13 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
         val t: Duration = Duration.parse(et.getTimeString)
         if (t.compareTo(currentTime) >= 0 && t.compareTo(getNextTime) <= 0) {
           logDebug(t + " Executing external transitions.")
-          externalEvents.foreach {e =>
+          // reverse takes O(n) time, but events should be delivered in FIFO
+          // order (LIFO is surprising to user.  A Queue does not save time
+          // as it effectively performs a reverse when elements are
+          // removed, which is only performed once)
+          externalEvents.reverse.foreach {e =>
             logDebug(t + " Handling external event: " + e)
-            handleExternalEvent(e)
+            routeExternalEvent(e)
           }
           externalEvents = List()
           currentTime = t
@@ -491,7 +516,8 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)
 
     case EventMessageCase(event, t, eventIndex) =>
-      val externalEvent = ExternalEvent(t, event)
+      //val externalEvent = ExternalEvent(t, event)
+      val externalEvent = event
       externalEvents = externalEvent :: externalEvents
       logDebug(t + " Bagging external event " + externalEvent + " with index " + eventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, eventIndex)

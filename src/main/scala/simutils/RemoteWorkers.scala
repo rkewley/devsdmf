@@ -1,13 +1,20 @@
 package simutils
 
 import akka.actor._
-
+import dmfmessages.DMFSimMessages._
 import scala.collection.mutable.ListBuffer
+import scala.collection.JavaConversions._
 
 object RemoteWorkers {
-  case class NewRemoteWorker(address: Address)
+  def translateAkkaAddres(akkaAddress: AkkaAddress): Address = Address(akkaAddress.getProtocol, akkaAddress.getSystem, akkaAddress.getHost, akkaAddress.getPort)
+  def buildAkkaAddress(address: Address): AkkaAddress = AkkaAddress.newBuilder()
+    .setProtocol(address.protocol).setSystem(address.system).setHost(address.host.getOrElse("")).setPort(address.port.getOrElse(0)).build
+  def buildRemoteWorkersReady(addresses: Seq[Address]): RemoteWorkersReady =  {
+    val addressList = addresses.map (a => buildAkkaAddress(a))
+    RemoteWorkersReady.newBuilder().addAllAddresses(addressList).build
+  }
+  def buildNewRemoteWorker(address: Address) = NewRemoteWorker.newBuilder().setAddress(buildAkkaAddress(address)).build
 
-  case class RemoteWorkersReady(addresses: List[Address])
   /**
     * Factory method for [[akka.actor.Props]] creation for [[RemoteWorkers]]
     *
@@ -26,12 +33,14 @@ class RemoteWorkers(val readyActor: ActorRef, val minWorkers: Int = 1) extends A
 
   import RemoteWorkers._
   def receive = {
-    case NewRemoteWorker(address) =>
+    case nrw: NewRemoteWorker =>
+      val addr = nrw.getAddress
+      val address = Address(addr.getProtocol, addr.getSystem, addr.getHost, addr.getPort)
       println("Adding " + address + " to workers list")
       workers += address
       if (workers.size == minWorkers && !started) {
         started = true
-        readyActor ! RemoteWorkersReady(workers.toList)
+        readyActor ! buildRemoteWorkersReady(workers.toList)
         self ! PoisonPill
       }
   }

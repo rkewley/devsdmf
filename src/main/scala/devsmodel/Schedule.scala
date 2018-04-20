@@ -27,18 +27,18 @@ import simutils.TimeManager
 
 import scala.collection.immutable.{TreeSet, TreeMap}
 
-class ScheduleItem(val executionTime: Duration, val events: TreeSet[DEVSEvent[_ <: Serializable]])
+class ScheduleItem(val executionTime: Duration, val events: TreeSet[DEVSEvent[_ <: java.io.Serializable]])
 
 class Schedule(initialTime: Duration = Duration.ofSeconds(0),
-               private var schedule: TreeMap[Duration, TreeSet[DEVSEvent[_ <: Serializable]]] = TreeMap[Duration, TreeSet[DEVSEvent[_ <: Serializable]]]())  {
+               private var schedule: TreeMap[Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]]] = TreeMap[Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]]]())  {
 
 
-    def addEvent(event: DEVSEvent[_ <: Serializable]) = {
+    def addEvent(event: DEVSEvent[_ <: java.io.Serializable]) = {
       val time = event.executionTime
       val treeSetOption = schedule.get(time)
       val newTreeSet = treeSetOption match {
         case Some(treeSet) => treeSet + event
-        case None => TreeSet[DEVSEvent[_ <: Serializable]](event)
+        case None => TreeSet[DEVSEvent[_ <: java.io.Serializable]](event)
       }
       schedule += time -> newTreeSet
       //schedule += (time -> (event + (schedule get time getOrElse Nil)))
@@ -54,17 +54,17 @@ class Schedule(initialTime: Duration = Duration.ofSeconds(0),
       }
     }
 
-    def removeEventsAt(time: Duration): TreeSet[DEVSEvent[_ <: Serializable]] = {
+    def removeEventsAt(time: Duration): TreeSet[DEVSEvent[_ <: java.io.Serializable]] = {
       schedule.get(time) match {
         case Some(eventList) =>
           schedule -= time
           eventList
-        case None => TreeSet[DEVSEvent[_ <: Serializable]]()
+        case None => TreeSet[DEVSEvent[_ <: java.io.Serializable]]()
       }
     }
 
     def removeNextSingleEvent: Unit = {
-      val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: Serializable]])] = schedule.headOption
+      val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]])] = schedule.headOption
       nextEvents match {
         case Some((time, eventList)) => {
           eventList.size match {
@@ -81,7 +81,7 @@ class Schedule(initialTime: Duration = Duration.ofSeconds(0),
     }
 
     def removeNextEvents: Unit = {
-      val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: Serializable]])] = schedule.headOption
+      val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]])] = schedule.headOption
       nextEvents match {
         case Some((time, eventList)) =>
           schedule -= time
@@ -90,7 +90,7 @@ class Schedule(initialTime: Duration = Duration.ofSeconds(0),
     }
 
     def getNextEvents: Option[ScheduleItem] = {
-      val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: Serializable]])] = schedule.headOption
+      val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]])] = schedule.headOption
       nextEvents match {
         case Some((time, eventList)) =>
           Some(new ScheduleItem(time, eventList))
@@ -99,7 +99,7 @@ class Schedule(initialTime: Duration = Duration.ofSeconds(0),
     }
 
   def getNextSingleEvent: Option[DEVSEvent[_]] = {
-    val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: Serializable]])] = schedule.headOption
+    val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]])] = schedule.headOption
     nextEvents match {
       case Some((time, eventList)) =>
         Some(eventList.head)
@@ -108,7 +108,7 @@ class Schedule(initialTime: Duration = Duration.ofSeconds(0),
   }
 
   def getAndRemoveNextEvents: Option[ScheduleItem] = {
-    val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: Serializable]])] = schedule.headOption
+    val nextEvents: Option[(Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]])] = schedule.headOption
     nextEvents match {
       case Some((time, eventList)) => {
         schedule -= time
@@ -130,7 +130,7 @@ class Schedule(initialTime: Duration = Duration.ofSeconds(0),
 
 
     def deleteAllEvents = {
-      schedule = TreeMap[Duration, TreeSet[DEVSEvent[_ <: Serializable]]]()
+      schedule = TreeMap[Duration, TreeSet[DEVSEvent[_ <: java.io.Serializable]]]()
 
     }
 

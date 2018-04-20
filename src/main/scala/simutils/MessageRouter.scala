@@ -1,7 +1,7 @@
 package simutils
 
 import akka.actor._
-
+import dmfmessages.DMFSimMessages._
 import scala.collection.mutable.ListBuffer
 
 /**
@@ -9,20 +9,9 @@ import scala.collection.mutable.ListBuffer
   */
 object MessageRouter {
 
-  /**
-    * Message sent to [[MessageRouter]] by a new worker that becomes available
-    */
-  case object NewWorker
-
-  /**
-    * Message sent to [[MessageRouter]] when a worker receives a message.  Used only for testing
-    */
-  case object GotMessage
-
-  /**
-    * Message sent from [[MessageRouter]] to its creating actor to indicate workers are ready
-    */
-  case object WorkersReady
+  def buildWorkersReady: WorkersReady = WorkersReady.newBuilder().build
+  def buildNewWorker: NewWorker = NewWorker.newBuilder().build
+  def buildGotMessage: GotMessage = GotMessage.newBuilder().build()
 
   /**
     * Factor method for [[Props]] creation for [[MessageRouter]]
@@ -56,18 +45,18 @@ class MessageRouter(val readyActor: ActorRef, val minWorkers: Int = 1) extends A
     * the [[index]]
     */
   def awaitWorkers: Receive = {
-    case NewWorker =>
+    case n: NewWorker =>
       println("Adding " + sender() + " to workers list")
       workers += sender()
       if (workers.size == minWorkers && !started) {
         started = true
-        readyActor ! WorkersReady
+        readyActor ! MessageRouter.buildWorkersReady
         context.unbecome()
       }
   }
 
   def receive = {
-    case GotMessage => println(sender() + " got a message")
+    case g: GotMessage => println(sender() + " got a message")
     case message: Any =>
       workers.size match {
         case 0 => println("No workers")

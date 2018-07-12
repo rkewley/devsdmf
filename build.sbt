@@ -7,8 +7,8 @@ lazy val simproto = {
       organization := "DMF",
       version := "3.4-SNAPSHOT",
       crossPaths := false,
-      publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
-      credentials += Credentials(Path.userHome / ".ivy2" / ".credentials"),
+      credentials += Credentials(Path.userHome / ".ivy2" / ".nexus"),
+      publishTo := Some("snapshots" at "https://nexus.d-a-s.com/repository/maven-snapshots/"),
       version in ProtobufConfig := "3.3.1"
     )
     .enablePlugins(ProtobufPlugin)

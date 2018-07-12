@@ -20,8 +20,8 @@ lazy val devsdmf = {
       scalaVersion := "2.12.3",
       organization := "DMF",
       version := "3.4-SNAPSHOT",
-      publishTo := Some("Artifactory Realm" at "https://dmf.d-a-s.com/artifactory/libs-snapshot-local;build.timestamp=" + new java.util.Date().getTime),
-      credentials += Credentials(Path.userHome / ".ivy2" / ".credentials"),
+      credentials += Credentials(Path.userHome / ".ivy2" / ".nexus"),
+      publishTo := Some("snapshots" at "https://nexus.d-a-s.com/repository/maven-snapshots/"),
       libraryDependencies ++= Seq(
         "org.scala-lang" % "scala-reflect" % scalaVersion.value,
         "com.typesafe.akka" %% "akka-remote" % "2.5.4",

@@ -5,7 +5,7 @@ lazy val simproto = {
     .settings(
       scalaVersion := "2.12.3",
       organization := "DMF",
-      version := "3.4-SNAPSHOT",
+      version := "3.5-SNAPSHOT",
       crossPaths := false,
       credentials += Credentials(Path.userHome / ".ivy2" / ".nexus"),
       publishTo := Some("snapshots" at "https://nexus.d-a-s.com/repository/maven-snapshots/"),
@@ -19,7 +19,7 @@ lazy val devsdmf = {
     .settings(
       scalaVersion := "2.12.3",
       organization := "DMF",
-      version := "3.4-SNAPSHOT",
+      version := "3.5-SNAPSHOT",
       credentials += Credentials(Path.userHome / ".ivy2" / ".nexus"),
       publishTo := Some("snapshots" at "https://nexus.d-a-s.com/repository/maven-snapshots/"),
       libraryDependencies ++= Seq(

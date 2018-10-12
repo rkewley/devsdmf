@@ -77,7 +77,11 @@ object SimLogger {
       .setLogMessage(logMessage).setTimeString(timeString).build
 
   def buildLogState(variableName: String, t: Duration, state: com.google.protobuf.Message) : LogState = LogState.newBuilder()
-      .setVariableName(variableName).setTimeInStateString(t.toString).setState(buildAny(state)).build
+    .setVariableName(variableName)
+    .setTimeInStateString(t.toString)
+    .setState(buildAny(state))
+    .setJavaClass(state.getClass.getName)
+    .build
 
   def buildDesignPointIteration(designPoint: Int, iteration: Int): DesignPointIteration = DesignPointIteration.newBuilder()
     .setDesignPoint(designPoint).setIteration(iteration).build()
@@ -101,7 +105,7 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
 
   def receive = {
     case ded: DEVSEventData =>
-      val eventData = convertEvent(ded.getEventData)
+      val eventData = convertMessage(ded.getEventData, ded.getJavaClass)
       logString( ded.getEventType + " event: " + eventData, ded.getExecutionTimeString )
 
     case ev: ExternalEvent[_] =>
@@ -117,7 +121,7 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
       logString( "Output event : " + e.toString, timeOption )
 
     case ls: LogState =>
-      val state = convertState(ls.getState)
+      val state = convertMessage(ls.getState, ls.getJavaClass)
       logString( ls.getVariableName + " : " + state, ls.getTimeInStateString )
 
     case LogStateCase(name, state, timeOption) =>

@@ -32,6 +32,9 @@ import simutils.random.{SendInitRandom, InitRandom, SimRandom}
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
 import scala.collection.JavaConversions._
+import scala.util.Try
+
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * An [[Exception]] indicating that a [[ModelSimulator.DEVSModel]] has received an unhandled event
@@ -182,6 +185,13 @@ case class EventMessageCase[E <: java.io.Serializable](event: ExternalEvent[E], 
   */
 case class OutputMessageCase[O](output: O, t: Duration)
 
+
+object MessageConverter {
+  // Memoizer for class lookup
+  val memoForName = new Memoizer[(String,ClassLoader), Class[_]](
+    (k: (String,ClassLoader)) => Class.forName(k._1, false, k._2), 200 )
+}
+
 /**
   * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
   * an [[OutputMessage]], or a state object to the specific
@@ -189,36 +199,42 @@ case class OutputMessageCase[O](output: O, t: Duration)
   * This class must be extended by any implementing simulation in order to convert events.
   */
 trait MessageConverter {
-  def convertEvent(event: com.google.protobuf.Any): com.google.protobuf.Message
-  def convertOutput(output: com.google.protobuf.Any): com.google.protobuf.Message
-  def convertState(state: com.google.protobuf.Any): com.google.protobuf.Message
-}
+  //def convertEvent(event: com.google.protobuf.Any): com.google.protobuf.Message
+  //def convertOutput(output: com.google.protobuf.Any): com.google.protobuf.Message
+  //def convertState(state: com.google.protobuf.Any): com.google.protobuf.Message
 
-/**
-  * A trait that supports conversion of a [[DEVSEventData]] event data of type [[com.google.protobuf.Any]],
-  * an [[OutputMessage]], or a state object to the specific
-  * [[com.google.protobuf.Message]] that holds the data
-  *
-  * This class can be extended in order to implement the
-  * [[MessageConverter]] trait using lists of messages.  To do so, the
-  * extending implementation must define an eventList, outputList, and
-  * stateList that hold default instances of the
-  * com.gooogle.protobuf.Message converted for that simulation.
-  */
-trait MessageConverterLists extends MessageConverter {
-  val eventList: List[com.google.protobuf.Message]
-  val outputList: List[com.google.protobuf.Message]
-  val stateList: List[com.google.protobuf.Message]
-  override def convertEvent(event: com.google.protobuf.Any) =
-    convertAny(event, eventList)
-  override def convertOutput(output: com.google.protobuf.Any) =
-    convertAny(output, outputList)
-  override def convertState(state: com.google.protobuf.Any) =
-    convertAny(state, stateList)
-  protected def convertAny(any: com.google.protobuf.Any, classes: List[com.google.protobuf.Message]): com.google.protobuf.Message = {
-    classes.find(msg => any.is(msg.getClass)) match {
-      case Some(msg) => any.unpack(msg.getClass)
-      case None => throw new Exception("Cannot convert com.google.protobuf.any object: " + any.getTypeUrl)
+  // This can be overridden to change cache size
+  val classCacheSize = 50
+
+  // This can be overridden to change the default class loader
+  val messageClassLoader: ClassLoader = null
+
+  lazy val memoClass = new Memoizer[(String,String), Class[_<:com.google.protobuf.Message ]](
+    (k: (String,String)) => findMessageClass( k._1, k._2 ), classCacheSize )
+
+  def convertMessage( any: com.google.protobuf.Any, classHint: String ): com.google.protobuf.Message = {
+    val clazz = memoClass( (any.getTypeUrl, classHint ) )
+    if( null != clazz ) {
+      any.unpack( clazz )
+    }
+    else
+      throw new ClassNotFoundException("Cannot convert com.google.protobuf.any object: " + any.getTypeUrl)
+  }
+
+  def findMessageClass( typeUrl: String, classHint: String ): Class[_<:com.google.protobuf.Message ] = {
+    if( null != classHint && 0 < classHint.size ) {
+      MessageConverter.memoForName( classHint, messageClassLoader )
+        .asSubclass(classOf[com.google.protobuf.Message])
+      // val defaultMethod = clazz.getMethod("getDefaultInstance")
+
+      // defaultMethod.invoke(null) match {
+      //   case a => a.getClass
+
+      //   case _ => throw new ClassNotFoundException(
+      //     "Cannot convert com.google.protobuf.any to " + clazz.getName)
+      // }
+    } else {
+      throw new ClassNotFoundException("Cannot convert com.google.protobuf.any object: " + typeUrl)
     }
   }
 }
@@ -238,9 +254,6 @@ trait MessageConverterMap extends MessageConverter {
   val packageMap: Map[String,String]
   val typeUrlPattern = "type.googleapis.com/([\\w\\.]+)\\.(\\w+)".r
 
-  override def convertEvent(event: com.google.protobuf.Any) = convertAny(event)
-  override def convertOutput(output: com.google.protobuf.Any) = convertAny(output)
-  override def convertState(state: com.google.protobuf.Any) = convertAny(state)
 
   private def typeUrlToJavaClassname( typeUrl: String ): String = {
     val typeUrlPattern( pkg, name ) = typeUrl
@@ -249,15 +262,10 @@ trait MessageConverterMap extends MessageConverter {
       .getOrElse( throw new Exception("Cannot find type for " + typeUrl ) )
   }
 
-  protected def convertAny( any: com.google.protobuf.Any ): com.google.protobuf.Message = {
-    val clazz = Class.forName( typeUrlToJavaClassname( any.getTypeUrl ) )
-    val defaultMethod = clazz.getMethod("getDefaultInstance")
-
-    defaultMethod.invoke(null) match {
-      case a: com.google.protobuf.Message => any.unpack(a.getClass)
-
-      case _ => throw new Exception(
-        "Cannot convert com.google.protobuf.any to " + clazz.getName)
+  override def findMessageClass( typeUrl: String, classHint: String ): Class[_<:com.google.protobuf.Message ] = {
+    Try( super.findMessageClass(typeUrl, classHint) ) getOrElse {
+      MessageConverter.memoForName( typeUrlToJavaClassname( typeUrl ), messageClassLoader )
+        .asSubclass( classOf[com.google.protobuf.Message] )
     }
   }
 }
@@ -286,7 +294,11 @@ object ModelSimulator {
 
   def buildOutputMessage[T <: com.google.protobuf.Message](output: T, t: Duration): OutputMessage = {
     val any: com.google.protobuf.Any = buildAny(output)
-    OutputMessage.newBuilder().setTimeString(t.toString).setOutput(any).build()
+    OutputMessage.newBuilder()
+      .setTimeString(t.toString)
+      .setOutput(any)
+      .setJavaClass(output.getClass.getName)
+      .build()
   }
 
   def buildOutputDone(t: Duration): OutputDone = OutputDone.newBuilder().setTimeString(t.toString).build
@@ -297,7 +309,10 @@ object ModelSimulator {
   def buildAny[T <: com.google.protobuf.Message](m: T): Any = Any.pack[T](m)
 
   def buildDEVSEventData(eventType: DEVSEventData.EventType, t: Duration, eventData: com.google.protobuf.Message): DEVSEventData = DEVSEventData.newBuilder().setEventType(eventType)
-      .setExecutionTimeString(t.toString).setEventData(buildAny(eventData)).build()
+    .setExecutionTimeString(t.toString)
+    .setEventData(buildAny(eventData))
+    .setJavaClass(eventData.getClass.getName)
+    .build()
 
   def buildExecuteTransition(t: Duration): ExecuteTransition = ExecuteTransition.newBuilder().setTimeString(t.toString).build()
 
@@ -455,7 +470,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       }
 
     case outputMessage: OutputMessage =>
-      logDebug(outputMessage.getTimeString + " Received GenerateOutput and generated the following output: " + convertOutput(outputMessage.getOutput))
+      logDebug(outputMessage.getTimeString + " Received GenerateOutput and generated the following output: " + convertMessage(outputMessage.getOutput, outputMessage.getJavaClass))
       context.parent ! outputMessage
 
     case om: OutputMessageCase[_] =>
@@ -468,7 +483,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
     case e: EventMessage =>
       val time: Duration = Duration.parse(e.getTimeString)
-      val exEvent = ExternalEvent(time, convertEvent(e.getEvent.getEventData) match {case s: java.io.Serializable => s})
+      val exEvent = ExternalEvent(time, convertMessage(e.getEvent.getEventData, e.getEvent.getJavaClass) match {case s: java.io.Serializable => s})
       val index = e.getEventIndex
       handleEventMessageCase(EventMessageCase(exEvent, time, index))
 
@@ -657,7 +672,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     val initialEventList: List[DEVSEvent[_ <: java.io.Serializable]] = initialEvents match {
       case Left(iEvents) => iEvents.getInternalEventsList.map { event =>
         val t: Duration = Duration.parse(event.getExecutionTimeString)
-        val eventData = convertEvent(event.getEventData) match {case s: java.io.Serializable => s}
+        val eventData = convertMessage(event.getEventData, event.getJavaClass) match {case s: java.io.Serializable => s}
         InternalEvent(t, eventData)
       }.toList
       case Right(iEvents) => iEvents

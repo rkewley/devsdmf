@@ -137,6 +137,7 @@ message EventMessage {
 message OutputMessage {
     google.protobuf.Any output = 1;
     string timeString = 2;
+    string javaClass = 3;
 }
 
 message EmptyProperties {}
@@ -171,6 +172,7 @@ message DEVSEventData {
     EventType eventType = 1;
     string executionTimeString = 2;
     google.protobuf.Any eventData = 3;
+    string javaClass = 4;
 }
 
 /**
@@ -213,6 +215,7 @@ message LogState {
     string variableName = 1;
     string timeInStateString = 2;
     google.protobuf.Any state = 3;
+    string javaClass = 4;
 }
 
 /**

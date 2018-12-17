@@ -189,7 +189,7 @@ case class OutputMessageCase[O](output: O, t: Duration)
 object MessageConverter {
   // Memoizer for class lookup
   val memoForName = new Memoizer[(String,ClassLoader), Class[_]](
-    (k: (String,ClassLoader)) => Class.forName(k._1, false, k._2), 200 )
+    (k: (String,ClassLoader)) => Class.forName(k._1, true, k._2), 200 )
 }
 
 /**
@@ -207,7 +207,7 @@ trait MessageConverter {
   val classCacheSize = 50
 
   // This can be overridden to change the default class loader
-  val messageClassLoader: ClassLoader = null
+  val messageClassLoader: ClassLoader = this.getClass.getClassLoader
 
   lazy val memoClass = new Memoizer[(String,String), Class[_<:com.google.protobuf.Message ]](
     (k: (String,String)) => findMessageClass( k._1, k._2 ), classCacheSize )

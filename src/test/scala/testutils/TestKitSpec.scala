@@ -12,7 +12,7 @@ abstract class TestKitSpec(name: String)
   with ImplicitSender {
 
   override def afterAll() {
-    system.shutdown()
+    system.terminate()
   }
 }
 

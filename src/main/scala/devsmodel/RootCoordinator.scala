@@ -26,9 +26,11 @@ import java.time.Duration
 import akka.actor._
 import akka.actor.SupervisorStrategy._
 import akka.event.{Logging, LoggingAdapter}
+import akka.serialization.Serialization
 import dmfmessages.DMFSimMessages.GenerateOutput
 import simutils._
-import simutils.random.{SendInitRandom, InitRandom, SplitStreamActor}
+import simutils.random.{InitRandom, SendInitRandom, SplitStreamActor}
+
 import scala.concurrent.duration._
 import dmfmessages.DMFSimMessages._
 
@@ -121,7 +123,10 @@ abstract class RootCoordinator(val initialTime: Duration,
 
     case s: StartSimulation =>
       simLogger ! designPointIteration
-      topCoordinator ! GetNextTime.newBuilder().build()
+      topCoordinator ! GetNextTime.newBuilder()
+          .setSerializedRandomActor(Serialization.serializedActorPath(randomActor))
+          .setSerializedSimLogger(Serialization.serializedActorPath(simLogger))
+          .build()
       logDebug("Starting simulatioin")
 
     case nt: NextTime =>

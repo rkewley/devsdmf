@@ -39,6 +39,9 @@ object TimeUtil {
 
   val InfiniteTime = Duration.ofSeconds(Long.MaxValue)
 
+  val startTime = java.time.Instant.now
+  val timeUtil = new TimeUtil(startTime)
+
 }
 
 class TimeUtil(val startTime: Instant) {

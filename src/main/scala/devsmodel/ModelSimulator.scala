@@ -352,8 +352,8 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
    initialTime: Duration,
    initialState: S,
    initialEvents: InitialEventsType,
-   val randomActor: ActorRef,
-   val simLogger: ActorRef) extends LoggingActor with UniqueNames with MessageConverter {
+   var randomActor: ActorRef,
+   var simLogger: ActorRef) extends LoggingActor with UniqueNames with MessageConverter {
 
   override val supervisorStrategy =
     OneForOneStrategy() {
@@ -369,6 +369,12 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
   protected val devs: DEVSModel[_, _, _, _]
 
   var random: SimRandom = _
+
+  /**
+   * The parent coordinator for this coordinator.  It can be different from the akka parent,
+   * which manages actor supervision.
+   */
+  protected var parentCoordinator: ActorRef = _
 
   /**
    * Bag of external event messages to be executed
@@ -412,7 +418,11 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
   def receive = {
 
     case gnt: GetNextTime =>
+      parentCoordinator = sender()
       logDebug(initialTime + "Received GetNextTime.")
+      randomActor = context.system.asInstanceOf[ExtendedActorSystem].provider.resolveActorRef(gnt.getSerializedRandomActor)
+      simLogger = context.system.asInstanceOf[ExtendedActorSystem].provider.resolveActorRef(gnt.getSerializedSimLogger)
+      devs.simLogger = simLogger
       randomActor ! SendInitRandom()
 
     case InitRandom(seed, skipSize, numSkips) =>
@@ -421,7 +431,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       devs.random = random
       devs.initializeRandomProperties
       logDebug("Sending next time: " + getNextTime + " to parent.")
-      context.parent ! ModelSimulator.buildNextTime(getNextTime)
+      parentCoordinator ! ModelSimulator.buildNextTime(getNextTime)
       context.become(executeSimulation)
   }
 
@@ -471,15 +481,15 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
     case outputMessage: OutputMessage =>
       logDebug(outputMessage.getTimeString + " Received GenerateOutput and generated the following output: " + convertMessage(outputMessage.getOutput, outputMessage.getJavaClass))
-      context.parent ! outputMessage
+      parentCoordinator ! outputMessage
 
     case om: OutputMessageCase[_] =>
       logDebug(om.t.toString + " Received GenerateOutput and generated the following output: " + om.output)
-      context.parent ! om
+      parentCoordinator ! om
 
     case outputDone: OutputDone =>
       logDebug(sender().path.name + " done with output at " + outputDone.getTimeString)
-      context.parent ! outputDone
+      parentCoordinator ! outputDone
 
     case e: EventMessage =>
       val time: Duration = Duration.parse(e.getTimeString)
@@ -492,7 +502,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
     case p: ProcessEventMessages =>
       val t = Duration.parse(p.getTimeString)
-      context.parent ! ModelSimulator.buildReadyToProcessEventMessages(t)
+      parentCoordinator ! ModelSimulator.buildReadyToProcessEventMessages(t)
 
     case et: ExecuteTransition =>
       val t = Duration.parse(et.getTimeString)
@@ -523,7 +533,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       val t = Duration.parse(itd.getTimeString)
       if(externalEvents.isEmpty) {
         devs.currentTime = t
-        context.parent ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
+        parentCoordinator ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
       } else {
         devs.externalStateTransition(t)
       }
@@ -532,7 +542,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     //   val t = Duration.parse(itd.getTimeString)
     //   if(externalEvents.isEmpty) {
     //     devs.currentTime = t
-    //     context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
+    //     parentCoordinator ! ModelSimulator.buildTransitionDone(t, getNextTime)
     //   } else {
     //     devs.externalStateTransition(t)
     //   }
@@ -541,7 +551,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     //   val t = Duration.parse(etd.getTimeString)
     //   devs.currentTime = t
     //   if (externalEvents.isEmpty)
-    //     context.parent ! ModelSimulator.buildTransitionDone(t, getNextTime)
+    //     parentCoordinator ! ModelSimulator.buildTransitionDone(t, getNextTime)
     //   else
     //     devs.externalStateTransition(t)
 
@@ -549,13 +559,13 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       val t = Duration.parse(ctd.getTimeString)
       externalEvents = List()
       devs.currentTime = t
-      context.parent ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
+      parentCoordinator ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
 
     case t: Terminate =>
       preTerminate()
 
     case td: TerminateDone =>
-      context.parent ! td
+      parentCoordinator ! td
   }
 
   /**
@@ -579,7 +589,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
    initialState: S,
    initialEvents: InitialEventsType,
    initialTime: Duration,
-   val simLogger: ActorRef) {
+   var simLogger: ActorRef) {
 
     var randomProperties: R = _
 

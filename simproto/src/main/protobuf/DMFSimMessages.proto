@@ -188,7 +188,10 @@ message InitialEvents {
  * The message is sent at simulation initialization from the [[RootCoordinator]] to the [[RootCoordinator.topCoordinator]]
  * in order to determine the first transition time in the simulation
  */
-message GetNextTime{}
+message GetNextTime{
+    string serializedRandomActor = 1;
+    string serializedSimLogger = 2;
+}
 
 /**
  * Upon receiveing a [[GetNextTime]] message from the [[RootCoordinator]], the [[RootCoordinator.topCoordinator]] replies

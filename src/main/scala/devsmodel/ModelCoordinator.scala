@@ -27,7 +27,8 @@ import akka.actor._
 import dmfmessages.DMFSimMessages._
 import simutils._
 import akka.event.{Logging, LoggingAdapter}
-import simutils.{UniqueNames, LoggingActor}
+import akka.serialization.Serialization
+import simutils.{LoggingActor, UniqueNames}
 
 import scala.collection.mutable
 
@@ -43,7 +44,7 @@ import scala.collection.mutable
   * @param randomActor  The random actor to set random number seeds
   * @param simLogger The logger for the simulation
   */
-abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef, val simLogger: ActorRef)
+abstract class ModelCoordinator(val initialTime: Duration, var randomActor: ActorRef, var simLogger: ActorRef)
   extends LoggingActor with UniqueNames with MessageConverter {
 
   override val supervisorStrategy =
@@ -69,6 +70,12 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
    * The current simulation time
    */
   protected var currentTime = initialTime
+
+  /**
+   * The parent coordinator for this coordinator.  It can be different from the akka parent,
+   * which manages actor supervision.
+   */
+  protected var parentCoordinator: ActorRef = _
 
   /**
    * Bag of external event messages to be executed
@@ -213,7 +220,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
    */
   private def checkDoneProcessingOutput(t: Duration): Unit = {
     if(awaitingOutputDone.isEmpty && awaitingBagEvents.isEmpty) {
-      context.parent ! ModelSimulator.buildOutputDone(t)
+      parentCoordinator ! ModelSimulator.buildOutputDone(t)
       logDebug(t + " Done processing putput.")
     } else {
       logDebug(t + " awaitingOutputDone still has " + awaitingOutputDone.size + " members.")
@@ -233,7 +240,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
     if (awaitingBagEvents.isEmpty) {
       synchronizeSet = (influences ::: imminents).distinct
       if (synchronizeSet.isEmpty) {
-        context.parent ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
+        parentCoordinator ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
         logDebug("Become: Synchronize set is empty, transitioning from passingMessages to processingOutput")
         context.become(processingOutput)
       } else {
@@ -254,7 +261,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
   /**
    * This is a very important abstract method that must be overridden by any subclasses of ModelCoordinator.  This function
    * will route output messages from subordinate models to the appropriate destinations, whether they be other subordinate models
-   * or to the parent model, transitioning the outputs through a translation function as necessary.  In the words of Ziegler
+   * or to the parent coordinator, transitioning the outputs through a translation function as necessary.  In the words of Ziegler
    * and Chow's paper, output is received from a specific subordinate model, i.  For all j models in the influence set Ii,
    * first send the output through an i to j translation Zij before sending the message to j.
    *
@@ -304,13 +311,16 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
    * The ModelCoordinator is in this state only during initialization.  Upon receipt of a [[GetNextTime]] message, send a
    * [[GetNextTime]] message to all subordinate models and await a [[NextTime]] result from each.  Upon receipt of a
    * [[NextTime]] message, store the result in the [[nextMap]] and remove the sender from the [[awaitingNextTime]] list.
-   * Once all results are received, send a [[NextTime]] message to the parent model with the result of [[getNextTime]].
+   * Once all results are received, send a [[NextTime]] message to the parent coordinator with the result of [[getNextTime]].
    * Then transition to the [[processingOutput]] state.
  *
    * @return
    */
   def receive = {
     case gnt: GetNextTime =>
+      parentCoordinator = sender()
+      randomActor = context.system.asInstanceOf[ExtendedActorSystem].provider.resolveActorRef(gnt.getSerializedRandomActor)
+      simLogger = context.system.asInstanceOf[ExtendedActorSystem].provider.resolveActorRef(gnt.getSerializedSimLogger)
       awaitingNextTime = nextMap.keySet.toList
       nextMap.keySet.foreach(_ ! gnt)
       logDebug("Initializing by getting next time from subordinate models")
@@ -321,7 +331,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       awaitingNextTime = awaitingNextTime.filterNot(_ == sender())
       logDebug(t + " Received NextTime from " + sender().path.name + ". Awaiting " + awaitingNextTime.size + " more.")
       if (awaitingNextTime.isEmpty) {
-        context.parent ! ModelSimulator.buildNextTime(getNextTime)
+        parentCoordinator ! ModelSimulator.buildNextTime(getNextTime)
         logDebug("Become: " + t + " Received all NextTime messages.  Transitioning from receive to processingOutput.")
         context.become(processingOutput)
       }
@@ -437,7 +447,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       awaitingMessageProcessing = awaitingMessageProcessing.filterNot(_ == sender)
       logDebug(t + " Received ReadyToProcessMessages from " + sender + ".  awaitingMessageProcessing has " + awaitingMessageProcessing.size + " members.")
       if (awaitingMessageProcessing.isEmpty) {
-        context.parent ! rpm
+        parentCoordinator ! rpm
         logDebug(t + "Done processing messages.")
         if (imminents.nonEmpty || externalEvents.nonEmpty) {
           logDebug("Become: Transitioning from processingOutput to passingMessages.")
@@ -457,7 +467,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
       awaitingTermination = awaitingTermination.filterNot(_ == sender())
       if (awaitingTermination.isEmpty) {
         logDebug("All subordinates completed termination.")
-        context.parent ! td
+        parentCoordinator ! td
       }
 
     case et: ExecuteTransition =>
@@ -552,7 +562,7 @@ abstract class ModelCoordinator(val initialTime: Duration, randomActor: ActorRef
         nextMap.put(sender(), nextTime)
         if (synchronizeSet.isEmpty) {
           currentTime = t
-          context.parent ! ModelSimulator.buildStateTransitionDone(currentTime, getNextTime)
+          parentCoordinator ! ModelSimulator.buildStateTransitionDone(currentTime, getNextTime)
           logDebug("Become: " + t + " All transitions complete.  Transitioning from processingTransitions to processingOutput")
           context.become(processingOutput)
         } else {

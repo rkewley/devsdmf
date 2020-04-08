@@ -123,7 +123,9 @@ abstract class ModelStateManager[S <: java.io.Serializable](initialState: S) {
   * @param eventData  The data for the event
   * @tparam E  The data type for the eventData
   */
-abstract class DEVSEvent[E <: java.io.Serializable](val executionTime: Duration, val eventData: E) extends Ordered[DEVSEvent[_ <: java.io.Serializable]] with java.io.Serializable {
+abstract class DEVSEvent[E <: java.io.Serializable](val executionTime: Duration, val eventData: E,
+                                                    val id: String = java.util.UUID.randomUUID().toString)
+  extends Ordered[DEVSEvent[_ <: java.io.Serializable]] with java.io.Serializable {
 
   override def compare(anotherEvent: DEVSEvent[_ <: java.io.Serializable]): Int = {
     val durationCompare =  this.executionTime.compareTo(anotherEvent.executionTime)
@@ -449,7 +451,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
   def handleEventMessageCase(em: EventMessageCase[_ <: java.io.Serializable]) = {
     logDebug(em.t + " Received and bagged external event " + em.event + " with index " + em.eventIndex)
     externalEvents = em.event :: externalEvents
-    simLogger ! em.event
+    //simLogger ! em.event
     sender() ! ModelSimulator.buildBagEventDone(em.t, em.eventIndex)
   }
   /**
@@ -591,7 +593,19 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
    initialTime: Duration,
    var simLogger: ActorRef) {
 
+    val className: String = this.getClass.getSimpleName
+    val modelName: String =  (className.contains(".") match {
+      case true => className.substring(0, className.indexOf(".") - 1)
+      case false => className
+    }).replaceAllLiterally("$", "")
+
+
     var randomProperties: R = _
+
+    /**
+     * The id of the current event being processed
+     */
+    protected var currentEvent: String = "initial"
 
     /**
       * The [[ModelStateManager]] for this simulation
@@ -719,7 +733,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       * Utility method called upon completion of [[internalStateTransition]] to have the enclosing [[ModelSimulator]]
       * to send an [[InternalTransitionDone]] to its parent [[ModelCoordinator]]
  *
-      * @param t The time of the event transition
+      *
       */
     // def internalTransitionDone(t: Duration) = {
     //   logDebug(t + " Completed internal transition.")
@@ -730,7 +744,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       * Utility method called upon completion of [[externalStateTransition]] to have the enclosing [[ModelSimulator]]
       * to send an [[ExternalTransitionDone]] to its parent [[ModelCoordinator]]
  *
-      * @param t The time of the event transition
+      * param t The time of the event transition
       */
     // def externalTransitionDone(t: Duration) = {
     //   logDebug(t + " Completed external transition.")
@@ -771,9 +785,9 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       state.stateVariables.foreach { stateVariable =>
         stateVariable.getStateTrajectory.stateTrajectory.foreach {
           case(t, s:com.google.protobuf.Message) =>
-            simLogger ! SimLogger.buildLogState(stateVariable.name, t, s)
+            simLogger ! SimLogger.buildLogState(stateVariable.name, t, s, modelName)
           case (t, s: java.io.Serializable) =>
-            simLogger ! LogStateCase(stateVariable.name, s, Some(t))
+            simLogger ! LogStateCase(stateVariable.name, modelName, s, Some(t))
         }
       }
     }
@@ -795,14 +809,17 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     def internalStateTransition(t: Duration) = {
       logDebug(t + " executing internal state transition")
       schedule.getAndRemoveNextSingleEvent match {
-        case Some(event) => event match {
+        case Some(event) =>
+          currentEvent = event.id
+          event match {
           case o: OutputEvent[_] => transitionDone(t)
           case d: DEVSEvent[_] => {
             d.eventData match {
               case g: com.google.protobuf.Message =>
-                simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.INTERNAL, t, g)
+                val devsEvent = ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.INTERNAL, t, g)
+                simLogger ! SimLogger.buildLogDEVSEvent(devsEvent, modelName)
               case s: java.io.Serializable =>
-                simLogger ! LogInternalEvent( d.eventData, Some(t) )
+                simLogger ! LogInternalEvent( d.eventData, modelName, Some(t) )
             }
             handleInternalStateTransitionData(d.eventData, t)
           }
@@ -833,9 +850,10 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
           externalEvents = externalEvents.tail
           nextEvent.eventData match {
             case g: com.google.protobuf.Message =>
-              simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.EXTERNAL, t, g)
+              val devsEvent = ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.EXTERNAL, t, g)
+              simLogger ! SimLogger.buildLogDEVSEvent(devsEvent, modelName)
             case s: java.io.Serializable =>
-              simLogger ! LogExternalEvent( nextEvent.eventData, Some(t) )
+              simLogger ! LogExternalEvent( nextEvent.eventData, modelName, Some(t))
           }
           handleExternalStateTransitionData(nextEvent.eventData, t)
       }
@@ -878,14 +896,13 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
             o.eventData match {
               case ed: com.google.protobuf.Message =>
                 sim ! ModelSimulator.buildOutputMessage(ed, t)
-                //simLogger ! ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, ed)
+                val devsEvent = ModelSimulator.buildDEVSEventData(DEVSEventData.EventType.OUTPUT, t, ed)
+                simLogger ! SimLogger.buildLogDEVSEvent(devsEvent, modelName)
               case ed: java.io.Serializable =>
                 val outputMessage = OutputMessageCase(ed, t)
                 sim ! outputMessage
-                //simLogger ! LogOutputEvent(ed, Some(t))
+                simLogger ! LogOutputEvent(ed, modelName, Some(t))
             }
-            simLogger ! LogOutputEvent(o.eventData, Some(t))
-
           case _ =>
         }
         case None =>

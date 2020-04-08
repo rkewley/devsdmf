@@ -32,32 +32,36 @@ import dmfmessages.DMFSimMessages._
 
 abstract class LogEvent[E] extends Serializable {
   def event: E
+  def modelName: String
   def timeOption: Option[Duration]
 }
 
 /**
   * Message sent to tell the logger to log an external event
   * @param event  The external event to log
+  * @param modelName The class name of the DEVS model executing this event
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam E The type of event
   */
-case class LogExternalEvent[E](event: E, timeOption: Option[Duration] = None) extends LogEvent[E]
+case class LogExternalEvent[E](event: E, modelName: String, timeOption: Option[Duration] = None) extends LogEvent[E]
 
 /**
   * Message sent to tell the logger to log an internal event
   * @param event  The external event to log
+  * @param modelName The class name of the DEVS model executing this event
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam E The type of event
   */
-case class LogInternalEvent[E](event: E, timeOption: Option[Duration] = None) extends LogEvent[E]
+case class LogInternalEvent[E](event: E, modelName: String, timeOption: Option[Duration] = None) extends LogEvent[E]
 
 /**
   * Message sent to tell the logger to log an output event
   * @param event  The external event to log
+  * @param modelName The class name of the DEVS model executing this event
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam E The type of event
   */
-case class LogOutputEvent[E](event: E, timeOption: Option[Duration] = None) extends LogEvent[E]
+case class LogOutputEvent[E](event: E, modelName: String, timeOption: Option[Duration] = None) extends LogEvent[E]
 
 /**
   * Message sent to tell the logger to log the given state
@@ -66,7 +70,7 @@ case class LogOutputEvent[E](event: E, timeOption: Option[Duration] = None) exte
   * @param timeOption  An optional time to log.  If None, it will log using the current simulation time
   * @tparam S  The type of the state variable
   */
-case class LogStateCase[S](name: String, event: S, timeOption: Option[Duration] = None) extends Serializable
+case class LogStateCase[S](name: String, modelName: String, state: S, timeOption: Option[Duration] = None) extends Serializable
 
 
 
@@ -76,12 +80,20 @@ object SimLogger {
   def buildLogToFile(logMessage: String, timeString: String): LogToFile = LogToFile.newBuilder()
       .setLogMessage(logMessage).setTimeString(timeString).build
 
-  def buildLogState(variableName: String, t: Duration, state: com.google.protobuf.Message) : LogState = LogState.newBuilder()
+  def buildLogState(variableName: String, t: Duration, state: com.google.protobuf.Message, modelName: String) : LogState = LogState.newBuilder()
     .setVariableName(variableName)
     .setTimeInStateString(t.toString)
     .setState(buildAny(state))
     .setJavaClass(state.getClass.getName)
+    .setModelName(modelName)
     .build
+
+  def buildLogDEVSEvent(eventData: DEVSEventData, modelName: String): LogDEVSEvent = {
+    LogDEVSEvent.newBuilder()
+      .setEvent(eventData)
+      .setModelName(modelName)
+      .build()
+  }
 
   def buildDesignPointIteration(designPoint: Int, iteration: Int): DesignPointIteration = DesignPointIteration.newBuilder()
     .setDesignPoint(designPoint).setIteration(iteration).build()
@@ -111,20 +123,20 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
     case ev: ExternalEvent[_] =>
       logString("EXTERNAL event: " + ev.eventData, ev.executionTime.toString)
 
-    case LogExternalEvent(e, timeOption) =>
+    case LogExternalEvent(e, modelName, timeOption) =>
       logString( "External event : " + e.toString, timeOption )
 
-    case LogInternalEvent(e, timeOption) =>
+    case LogInternalEvent(e, modelName, timeOption) =>
       logString( "Internal event : " + e.toString, timeOption )
 
-    case LogOutputEvent( e, timeOption ) =>
+    case LogOutputEvent( e, modelName, timeOption ) =>
       logString( "Output event : " + e.toString, timeOption )
 
     case ls: LogState =>
       val state = convertMessage(ls.getState, ls.getJavaClass)
       logString( ls.getVariableName + " : " + state, ls.getTimeInStateString )
 
-    case LogStateCase(name, state, timeOption) =>
+    case LogStateCase(name, modelName, state, timeOption) =>
       logString(name + ": " + state, timeOption.getOrElse(currentTime).toString)
 
     case lf: LogToFile =>
@@ -139,6 +151,9 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
     case lt: LogTerminate => //LogTerminate( r: Int, s:String, timeOption ) =>
       logString( "Terminate : " + lt.getLogMessage, lt.getTimeString )
       context.system.stop(self)
+
+    case a: Any =>
+      logString("Generic Logging: " + a, None)
   }
 
   protected def logString(s: String, timeString: String): Unit = {

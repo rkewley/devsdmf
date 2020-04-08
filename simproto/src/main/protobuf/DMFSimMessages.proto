@@ -173,6 +173,7 @@ message DEVSEventData {
     string executionTimeString = 2;
     google.protobuf.Any eventData = 3;
     string javaClass = 4;
+    string eventId = 5;
 }
 
 /**
@@ -219,6 +220,12 @@ message LogState {
     string timeInStateString = 2;
     google.protobuf.Any state = 3;
     string javaClass = 4;
+    string modelName = 5;
+}
+
+message LogDEVSEvent {
+    string modelName = 1;
+    DEVSEventData event = 2;
 }
 
 /**

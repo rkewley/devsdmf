@@ -29,8 +29,10 @@ import simutils._
 import akka.event.{Logging, LoggingAdapter}
 import akka.serialization.Serialization
 import simutils.{LoggingActor, UniqueNames}
-
+import akka.cluster.pubsub.DistributedPubSub
+import akka.cluster.pubsub.DistributedPubSubMediator.Put
 import scala.collection.mutable
+import scala.concurrent.duration.FiniteDuration
 
 /**
   * This object is a faithful representation of the model coordinator as described by as described by Chow
@@ -44,8 +46,14 @@ import scala.collection.mutable
   * @param randomActor  The random actor to set random number seeds
   * @param simLogger The logger for the simulation
   */
-abstract class ModelCoordinator(val initialTime: Duration, var randomActor: ActorRef, var simLogger: ActorRef)
+abstract class ModelCoordinator(val initialTime: Duration, var randomActor: ActorRef, var simLogger: ActorRef, val registerCluster: Boolean = false)
   extends LoggingActor with UniqueNames with MessageConverter {
+
+  if (registerCluster) {
+    val mediator = DistributedPubSub(context.system).mediator
+    // register to the path
+    mediator ! Put(self)
+  }
 
   override val supervisorStrategy =
     OneForOneStrategy() {

@@ -36,13 +36,13 @@ import scala.collection.JavaConverters._
 class Memoizer[K, V](func: K => V, MaxDataPoolEntries: Integer = 25) {
 
   private val dataIndex = new AtomicInteger(0)
-  private val dataPools = Array[ CMap[K, Future[V]] ](
+  private val dataPools: Array[ CMap[K, Future[V]] ] = Array[ CMap[K, Future[V]] ](
     new ConcurrentHashMap().asScala,
     new ConcurrentHashMap().asScala )
 
   /** Access a value from cache, and if nto present, load it.
     *
-    * @param k: The value lookup key
+    * @param key: The value lookup key
     */
   def apply ( key: K ): V = {
     val index: Integer = dataIndex.get()

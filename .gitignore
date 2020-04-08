@@ -1,6 +1,6 @@
 *.class
 *.log
-.idea
+.idea/*
 
 # sbt specific
 .cache
@@ -20,3 +20,4 @@ project/project/target
 tmp.*
 TAGS
 .ensime*
+/.idea/*

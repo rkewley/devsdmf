@@ -24,16 +24,16 @@ package devsmodel
 import java.time.Duration
 
 import akka.actor._
-import com.google.protobuf.{Any}
+import com.google.protobuf.Any
 import devsmodel.ModelSimulator.InitialEventsType
 import dmfmessages.DMFSimMessages._
 import simutils._
-import simutils.random.{SendInitRandom, InitRandom, SimRandom}
+import simutils.random.{InitRandom, SendInitRandom, SimRandom}
+
 import scala.collection.immutable.TreeMap
 import scala.collection.mutable
 import scala.collection.JavaConversions._
 import scala.util.Try
-
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -84,18 +84,30 @@ case class DynamicStateVariable[T <: java.io.Serializable](timeInState: Duration
   * @param initialState
   * @tparam S
   */
-abstract class ModelStateManager[S <: java.io.Serializable](initialState: S) {
+abstract class ModelStateManager[S <: java.io.Serializable](initialState: S, simulator: ModelSimulator[_ <: java.io.Serializable,S ,_ <: devsmodel.ModelStateManager[S]]) {
+  type SimEntityStateMap[T <: java.io.Serializable] = Map[String, SimEntityState [T]]
   /**
     * Single valued [[SimEntityState]] objects to keep track of internal state for a [[ModelSimulator.DEVSModel]]
     */
   val stateVariables: List[SimEntityState[_]] = List()
+
+  def logInitialState: Unit = {
+    stateVariables.foreach { sv =>
+      val dsv = sv.getLatestDynamicStateValue
+      logStateUpdate(dsv.state.asInstanceOf[java.io.Serializable], sv.variableName, dsv.timeInState)
+    }
+  }
 
   /**
     * Maps to dynamically keep track of state variables that are discovered during simulation execution
     * via ExternalEvents.  Each map has a key to represent the name of the value to be tracked
     * and a [[SimEntityState]] for each key in the map.
     */
-  val stateMaps: Map[String, mutable.Map[_, SimEntityState[_]]] = Map[String, mutable.Map[_, SimEntityState[_]]]()
+  var stateMaps: scala.collection.immutable.Map[String, SimEntityStateMap[_]] = Map()
+
+  def logStateUpdate(stateVariable: java.io.Serializable, variableName: String, t: Duration): Unit = {
+    simulator.logStateUpdate(stateVariable, variableName, t)
+  }
 
   /**
     * Utility function to build the [[SimEntityState]] object for to manage a state variable
@@ -107,7 +119,8 @@ abstract class ModelStateManager[S <: java.io.Serializable](initialState: S) {
     */
   def buildSimEntityState[T <: java.io.Serializable](initialState: DynamicStateVariable[T], name: String): SimEntityState[T] = {
     val stateTrajectory = new TreeMap[Duration, T] + (initialState.timeInState -> initialState.state)
-    new SimEntityState[T](stateTrajectory, name)
+    logStateUpdate(initialState.state, name, initialState.timeInState)
+    new SimEntityState[T](stateTrajectory, name, true, this)
   }
 }
 
@@ -355,7 +368,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
    initialState: S,
    initialEvents: InitialEventsType,
    var randomActor: ActorRef,
-   var simLogger: ActorRef) extends LoggingActor with UniqueNames with MessageConverter {
+   var simLogger: ActorRef) extends Actor with ActorLogging with UniqueNames with MessageConverter {
 
   override val supervisorStrategy =
     OneForOneStrategy() {
@@ -363,6 +376,8 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
         SupervisorStrategy.Escalate
         }
       }
+
+  val simulator = this
 
   /**
    * The DEVS framework model that this actor executes
@@ -381,7 +396,18 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
   /**
    * Bag of external event messages to be executed
    */
-  private var externalEvents: List[ExternalEvent[_]] = List()
+  protected var externalEvents: List[ExternalEvent[_]] = List()
+
+  def logStateUpdate(stateVariable: java.io.Serializable, variableName: String, t: Duration): Unit = {
+    if (devs != null && simLogger != null) {
+      stateVariable match {
+        case s:com.google.protobuf.Message =>
+          simLogger ! SimLogger.buildLogState(variableName, t, s, devs.modelName)
+        case s: java.io.Serializable =>
+          simLogger ! LogStateCase(variableName, devs.modelName, s, Some(t))
+      }
+    }
+  }
 
   /**
    * A convenience function to get the current time, or time of last state transitioin, of the [[DEVSModel]]
@@ -402,10 +428,11 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
    * end of the simulation.
    */
   def preTerminate() = {
-    devs.logState
+    // devs.logState
     devs.modelPreTerminate()
     self ! ModelSimulator.buildTerminateDone
   }
+
 
 
   /**
@@ -421,10 +448,11 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
     case gnt: GetNextTime =>
       parentCoordinator = sender()
-      logDebug(initialTime + "Received GetNextTime.")
+      log.debug(initialTime + "Received GetNextTime.")
       randomActor = context.system.asInstanceOf[ExtendedActorSystem].provider.resolveActorRef(gnt.getSerializedRandomActor)
       simLogger = context.system.asInstanceOf[ExtendedActorSystem].provider.resolveActorRef(gnt.getSerializedSimLogger)
       devs.simLogger = simLogger
+      devs.logInitialState
       randomActor ! SendInitRandom()
 
     case InitRandom(seed, skipSize, numSkips) =>
@@ -432,7 +460,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       random.skipTo(skipSize * numSkips)
       devs.random = random
       devs.initializeRandomProperties
-      logDebug("Sending next time: " + getNextTime + " to parent.")
+      log.debug("Sending next time: " + getNextTime + " to parent.")
       parentCoordinator ! ModelSimulator.buildNextTime(getNextTime)
       context.become(executeSimulation)
   }
@@ -449,7 +477,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
 
   def handleEventMessageCase(em: EventMessageCase[_ <: java.io.Serializable]) = {
-    logDebug(em.t + " Received and bagged external event " + em.event + " with index " + em.eventIndex)
+    log.debug(em.t + " Received and bagged external event " + em.event + " with index " + em.eventIndex)
     externalEvents = em.event :: externalEvents
     //simLogger ! em.event
     sender() ! ModelSimulator.buildBagEventDone(em.t, em.eventIndex)
@@ -466,7 +494,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
   def processSimulationMessages: Receive = {
 
     case gnt: GetNextTime =>
-      logDebug(getCurrentTime + " Received GetNextTime.  Sending " + getNextTime + " to parent.")
+      log.debug(getCurrentTime + " Received GetNextTime.  Sending " + getNextTime + " to parent.")
       sender() ! ModelSimulator.buildNextTime(getNextTime)
 
     /**
@@ -482,15 +510,15 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       }
 
     case outputMessage: OutputMessage =>
-      logDebug(outputMessage.getTimeString + " Received GenerateOutput and generated the following output: " + convertMessage(outputMessage.getOutput, outputMessage.getJavaClass))
+      log.debug(outputMessage.getTimeString + " Received GenerateOutput and generated the following output: " + convertMessage(outputMessage.getOutput, outputMessage.getJavaClass))
       parentCoordinator ! outputMessage
 
     case om: OutputMessageCase[_] =>
-      logDebug(om.t.toString + " Received GenerateOutput and generated the following output: " + om.output)
+      log.debug(om.t.toString + " Received GenerateOutput and generated the following output: " + om.output)
       parentCoordinator ! om
 
     case outputDone: OutputDone =>
-      logDebug(sender().path.name + " done with output at " + outputDone.getTimeString)
+      log.debug(sender().path.name + " done with output at " + outputDone.getTimeString)
       parentCoordinator ! outputDone
 
     case e: EventMessage =>
@@ -509,8 +537,8 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     case et: ExecuteTransition =>
       val t = Duration.parse(et.getTimeString)
       val tNext = devs.timeAdvanceFunction
-      logDebug(t + " Received ExecuteTransition")
-      logDebug(t + " Current time is " + getCurrentTime + " and externalEvents has " + externalEvents.size + " members.")
+      log.debug(t + " Received ExecuteTransition")
+      log.debug(t + " Current time is " + getCurrentTime + " and externalEvents has " + externalEvents.size + " members.")
       // Determine whether to execute internal, external, or confluent transition function
       if (t.compareTo(tNext) < 0 && t.compareTo(getCurrentTime) >= 0 && externalEvents.nonEmpty) {
         // If the current time is less than simulation next time and there is an external event to execute
@@ -612,12 +640,14 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       */
     val state: M = buildStateManager(initialState)
 
+    def logInitialState = state.logInitialState
+
     /**
       * Utility function to enable actor logging by the implementing trait
  *
       * @param s  The string to be written by the logger
       */
-    def log_debug(s: String) = logDebug(s)
+    def log_debug(s: String) = log.debug(s)
 
     /**
       * Utility function to enable actor logging by the implementing trait
@@ -671,14 +701,6 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       */
     def initializeRandomProperties: Unit
 
-    /**
-      * A utility method to turn debugging on and off in the [[simutils.LoggingActor]]
- *
-      * @param d Set true to enable debug logging
-      */
-    def setDebug(d: Boolean): Unit = {
-      debug = d
-    }
 
     /**
       * The current simulation time for the DEVSModel
@@ -705,7 +727,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
 
     /**
       * Utility method to allow implementatios of handled events to log a message to the [[simutils.SimLogger]]
- *
+      *
       * @param message  The message to be logged
       */
     def logMessage(message: String, time: Option[Duration] = None ) = {
@@ -725,7 +747,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       * @param t The time of the event transition
       */
     def transitionDone(t: Duration) = {
-      logDebug(t + " Completed internal transition.")
+      log.debug(t + " Completed internal transition.")
       sim ! ModelSimulator.buildTransitionDone(t)
     }
 
@@ -736,7 +758,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       *
       */
     // def internalTransitionDone(t: Duration) = {
-    //   logDebug(t + " Completed internal transition.")
+    //   log.debug(t + " Completed internal transition.")
     //   sim ! ModelSimulator.buildInternalTransitionDone(t)
     // }
 
@@ -747,7 +769,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       * param t The time of the event transition
       */
     // def externalTransitionDone(t: Duration) = {
-    //   logDebug(t + " Completed external transition.")
+    //   log.debug(t + " Completed external transition.")
     //   sim ! ModelSimulator.buildExternalTransitionDone(t)
     // }
 
@@ -785,9 +807,9 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
       state.stateVariables.foreach { stateVariable =>
         stateVariable.getStateTrajectory.stateTrajectory.foreach {
           case(t, s:com.google.protobuf.Message) =>
-            simLogger ! SimLogger.buildLogState(stateVariable.name, t, s, modelName)
+            simLogger ! SimLogger.buildLogState(stateVariable.variableName, t, s, modelName)
           case (t, s: java.io.Serializable) =>
-            simLogger ! LogStateCase(stateVariable.name, modelName, s, Some(t))
+            simLogger ! LogStateCase(stateVariable.variableName, modelName, s, Some(t))
         }
       }
     }
@@ -807,7 +829,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
      * @param t  The time of the internal state transition
      */
     def internalStateTransition(t: Duration) = {
-      logDebug(t + " executing internal state transition")
+      log.debug(t + " executing internal state transition")
       schedule.getAndRemoveNextSingleEvent match {
         case Some(event) =>
           currentEvent = event.id
@@ -841,7 +863,7 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
      * @param t  The time of the external  state transition
      */
     def externalStateTransition(t: Duration): Unit = {
-      logDebug(t + " executing external state transition")
+      log.debug(t + " executing external state transition")
       val nextEventOption = externalEvents.headOption
       nextEventOption match {
         case None =>
@@ -911,7 +933,8 @@ abstract class ModelSimulator[P <: java.io.Serializable, S <: java.io.Serializab
     }
 
     def processStateTransitionMessages: Receive = {
-      case _ =>
+      case a: Any =>
+        throw new SynchronizationException(s"Received message of type ${a.getClass} in processStateTransitionMessages with no handler.  Method has not been overridden.")
     }
   }
 }

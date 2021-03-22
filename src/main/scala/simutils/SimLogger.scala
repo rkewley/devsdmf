@@ -21,13 +21,14 @@ under the License.
 
 package simutils
 
-import java.io.{PrintWriter, File}
+import java.io.{File, PrintWriter}
 import java.time.Duration
 
-import akka.actor.{Actor, ActorRef}
-import com.google.protobuf.{Any}
-import devsmodel.{OutputMessageCase, ExternalEvent, EventMessageCase, MessageConverter}
+import akka.actor.{Actor, ActorLogging, ActorRef}
+import com.typesafe.config.Config
+import devsmodel.{EventMessageCase, ExternalEvent, MessageConverter, OutputMessageCase}
 import dmfmessages.DMFSimMessages._
+import collection.JavaConverters._
 
 
 abstract class LogEvent[E] extends Serializable {
@@ -73,9 +74,8 @@ case class LogOutputEvent[E](event: E, modelName: String, timeOption: Option[Dur
 case class LogStateCase[S](name: String, modelName: String, state: S, timeOption: Option[Duration] = None) extends Serializable
 
 
-
 object SimLogger {
-  def buildAny[T <: com.google.protobuf.Message](m: T): Any = Any.pack[T](m)
+  def buildAny[T <: com.google.protobuf.Message](m: T): com.google.protobuf.Any = com.google.protobuf.Any.pack[T](m)
 
   def buildLogToFile(logMessage: String, timeString: String): LogToFile = LogToFile.newBuilder()
       .setLogMessage(logMessage).setTimeString(timeString).build
@@ -100,6 +100,80 @@ object SimLogger {
 
   def buildLogTerminate(returnCode: Int, logMessage: String, time: Duration): LogTerminate = LogTerminate.newBuilder()
     .setReturnCode(returnCode).setLogMessage(logMessage).setTimeString(time.toString).build
+
+}
+
+trait FilterLogs {
+  def filterLogs(a: Any): Boolean
+}
+
+trait SimLogFilter {
+  def isLogged(a: Any): Boolean
+  def receive: PartialFunction[Any, Unit] = {
+    case a: Any =>
+      if (isLogged(a) )logMessage(a)
+  }
+  def logMessage: PartialFunction[Any, Unit]
+}
+
+object DontLogStateFilter extends FilterLogs {
+  def filterLogs(a: Any): Boolean = a match {
+    case _: LogState =>
+      false
+
+    case _ =>
+      true
+  }
+
+}
+
+
+
+case class ConfigFilter(config: Config) extends FilterLogs {
+
+  var logMap: Map[String, Boolean] = Map()
+
+  def isMatch(pattern: String, s: String): Boolean = {
+    val patterns = pattern.split("\\.")
+    val elements = s.split("\\.")
+    elements.size == patterns.size && {
+      val matches: IndexedSeq[Boolean] = patterns.indices.map { i =>
+        patterns(i) == "*" || patterns(i) == elements(i)
+      }
+      !matches.contains(false)
+    }
+  }
+
+  def hasMatch(patterns: List[String], s: String): Boolean = {
+    patterns.map(p => isMatch(p, s)).contains(true)
+  }
+
+  def isVariableLogged(modelName: String, variableName: String): Boolean = {
+    val path = "devs.logfilter." + modelName
+    config.hasPath(path) && hasMatch(config.getStringList(path).asScala.toList, variableName)
+  }
+
+  def filterLogs(a: Any): Boolean = {
+    a match {
+      case ls: LogState =>
+        val id: String = ls.getModelName + "." + ls.getVariableName
+        logMap.getOrElse(id, {
+          val logThisVariable = isVariableLogged(ls.getModelName, ls.getVariableName)
+          logMap = logMap + (id -> logThisVariable)
+          logThisVariable
+        })
+      case LogStateCase(name, modelName, state, timeOption) =>
+        val id: String = modelName + "." + name
+        logMap.getOrElse(id, {
+          val logThisVariable = isVariableLogged(modelName, name)
+          logMap = logMap + (id -> logThisVariable)
+          logThisVariable
+        })
+
+      case _ =>
+        true
+    }
+  }
 }
 
 
@@ -112,13 +186,20 @@ object SimLogger {
   * @param initialTime  The initial simulation time
   * @param designPoint The design point and iteration for a model run set
   */
-abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private var designPoint: DesignPointIteration = SimLogger.buildDesignPointIteration(1,1)) extends Actor with MessageConverter {
+class SimLogger(val dataLogger:ActorRef, initialTime: Duration, filterLogs: FilterLogs, private var designPoint: DesignPointIteration = SimLogger.buildDesignPointIteration(1,1))
+  extends Actor with MessageConverter with SimLogFilter {
   var currentTime = initialTime
 
-  def receive = {
+  override def isLogged(a: Any): Boolean = filterLogs.filterLogs(a)
+
+  def logMessage: PartialFunction[Any, Unit] = {
     case ded: DEVSEventData =>
       val eventData = convertMessage(ded.getEventData, ded.getJavaClass)
       logString( ded.getEventType + " event: " + eventData, ded.getExecutionTimeString )
+
+    case lde: LogDEVSEvent =>
+      val eventData = convertMessage(lde.getEvent.getEventData, lde.getEvent.getJavaClass)
+      logString( lde.getModelName + " " + lde.getEvent.getEventType + " event: " + eventData, lde.getEvent.getExecutionTimeString )
 
     case ev: ExternalEvent[_] =>
       logString("EXTERNAL event: " + ev.eventData, ev.executionTime.toString)
@@ -152,8 +233,6 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
       logString( "Terminate : " + lt.getLogMessage, lt.getTimeString )
       context.system.stop(self)
 
-    case a: Any =>
-      logString("Generic Logging: " + a, None)
   }
 
   protected def logString(s: String, timeString: String): Unit = {
@@ -173,3 +252,4 @@ abstract class SimLogger(val dataLogger:ActorRef, initialTime: Duration, private
   }
 
 }
+

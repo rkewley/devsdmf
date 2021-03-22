@@ -21,14 +21,14 @@ under the License.
 
 package simutils
 
-import akka.actor.{Actor, UnhandledMessage}
+import akka.actor.{Actor, ActorLogging, UnhandledMessage}
 import akka.event.{Logging, LoggingAdapter}
 
 /**
   * A listener for unhandled messages in the actor system.  For a simulation, and unhandled message is a critical error,
   * so the behavior is to log the unhandled message and shut the system down.
   */
-class UnhandledMessagesListener extends LoggingActor {
+class UnhandledMessagesListener extends Actor with ActorLogging {
 
   override def receive = {
     case UnhandledMessage(message, sender, recipient) =>

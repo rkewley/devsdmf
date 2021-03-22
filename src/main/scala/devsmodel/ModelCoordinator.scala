@@ -28,9 +28,11 @@ import dmfmessages.DMFSimMessages._
 import simutils._
 import akka.event.{Logging, LoggingAdapter}
 import akka.serialization.Serialization
-import simutils.{LoggingActor, UniqueNames}
+import simutils.UniqueNames
 import akka.cluster.pubsub.DistributedPubSub
 import akka.cluster.pubsub.DistributedPubSubMediator.Put
+import akka.event.slf4j.SLF4JLogging
+
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
@@ -47,7 +49,7 @@ import scala.concurrent.duration.FiniteDuration
   * @param simLogger The logger for the simulation
   */
 abstract class ModelCoordinator(val initialTime: Duration, var randomActor: ActorRef, var simLogger: ActorRef, val registerCluster: Boolean = false)
-  extends LoggingActor with UniqueNames with MessageConverter {
+  extends Actor with ActorLogging with UniqueNames with MessageConverter {
 
   if (registerCluster) {
     val mediator = DistributedPubSub(context.system).mediator
@@ -102,7 +104,7 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
    */
   def nextEventIndex: Long = {
     runningEventIndex = runningEventIndex + 1
-    logDebug("Assigning event index " + (runningEventIndex - 1))
+    log.debug("Assigning event index " + (runningEventIndex - 1))
     runningEventIndex - 1
   }
 
@@ -126,9 +128,9 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
     awaitingBagEvents = AwaitingEventBagging(receiveActor, nextIndex) :: awaitingBagEvents
     influences = receiveActor :: influences
     val t = externalEvent.executionTime
-    logDebug(t + "Sending message to " + receiveActor + ": " + eventMessage)
-    logDebug(t + "Added message to awaitingBagEvents which now has size " + awaitingBagEvents.size)
-    logDebug(t + "Adding " + receiveActor + " to influences")
+    log.debug(t + "Sending message to " + receiveActor + ": " + eventMessage)
+    log.debug(t + "Added message to awaitingBagEvents which now has size " + awaitingBagEvents.size)
+    log.debug(t + "Adding " + receiveActor + " to influences")
     receiveActor ! eventMessage
   }
 
@@ -185,7 +187,7 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
   protected var awaitingTermination: List[ActorRef] = List()
 
   /**
-   * A list of submordinate models to which and [[ExecuteTransition]] message is sent in the [[checkDonePassingMessages]]
+   * A list of submordinate models to which an [[ExecuteTransition]] message is sent in the [[checkDonePassingMessages]]
    * method before going to the [[processingTransitions]] phase.  This set is composed of a combination of
    * models in the [[imminents]] list and the [[influences]] list.  This set is the set of subordinate models
    * executing simultaneous and parallel state transitions.
@@ -229,10 +231,10 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
   private def checkDoneProcessingOutput(t: Duration): Unit = {
     if(awaitingOutputDone.isEmpty && awaitingBagEvents.isEmpty) {
       parentCoordinator ! ModelSimulator.buildOutputDone(t)
-      logDebug(t + " Done processing putput.")
+      log.debug(t + " Done processing putput.")
     } else {
-      logDebug(t + " awaitingOutputDone still has " + awaitingOutputDone.size + " members.")
-      logDebug(t + " awaitingBagEvents still has " + awaitingBagEvents.size + " members.")
+      log.debug(t + " awaitingOutputDone still has " + awaitingOutputDone.size + " members.")
+      log.debug(t + " awaitingBagEvents still has " + awaitingBagEvents.size + " members.")
     }
   }
 
@@ -243,25 +245,25 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
    * which is the union of the [[imminents]] and [[influences]] list without duplicates.  Send an [[ExecuteTransition]]
    * message to each model in the synchronizeSet and transition to the [[processingTransitions]] state.
    */
-  private def checkDonePassingMessages(t: Duration): Unit = {
+  protected def checkDonePassingMessages(t: Duration): Unit = {
 
     if (awaitingBagEvents.isEmpty) {
       synchronizeSet = (influences ::: imminents).distinct
       if (synchronizeSet.isEmpty) {
         parentCoordinator ! ModelSimulator.buildStateTransitionDone(t, getNextTime)
-        logDebug("Become: Synchronize set is empty, transitioning from passingMessages to processingOutput")
+        log.debug("Become: Synchronize set is empty, transitioning from passingMessages to processingOutput")
         context.become(processingOutput)
       } else {
-        logDebug(t + "sending ExeucteTranisiton to synchronize set: " + synchronizeSet)
+        log.debug(t + "sending ExeucteTranisiton to synchronize set: " + synchronizeSet)
         synchronizeSet.foreach(s => s ! ModelSimulator.buildExecuteTransition(currentTime))
         imminents = List()
         influences = List()
-        logDebug("Become: awaitingBagEvents is empty.  Transitioning from passingMessages to processingTransitions phase.")
+        log.debug("Become: awaitingBagEvents is empty.  Transitioning from passingMessages to processingTransitions phase.")
         context.become(processingTransitions)
       }
     }
     else {
-      logDebug("awaitingBagEvents still has " + awaitingBagEvents.size + " members.")
+      log.debug("awaitingBagEvents still has " + awaitingBagEvents.size + " members.")
     }
   }
 
@@ -295,7 +297,7 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
   }
 
   /**
-   * This is another important abastract method that must be overridden by subclasses of ModelCoordinator.  This function
+   * This is another important abstract method that must be overridden by subclasses of ModelCoordinator.  This function
    * will route any external event messages to the appropriate subordinate models.  It will process those events
    * through a translation function as necessary.
    *
@@ -331,20 +333,20 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       simLogger = context.system.asInstanceOf[ExtendedActorSystem].provider.resolveActorRef(gnt.getSerializedSimLogger)
       awaitingNextTime = nextMap.keySet.toList
       nextMap.keySet.foreach(_ ! gnt)
-      logDebug("Initializing by getting next time from subordinate models")
+      log.debug("Initializing by getting next time from subordinate models")
 
     case nt: NextTime =>
       val t: Duration = Duration.parse(nt.getTimeString)
       nextMap.put(sender(), t)
       awaitingNextTime = awaitingNextTime.filterNot(_ == sender())
-      logDebug(t + " Received NextTime from " + sender().path.name + ". Awaiting " + awaitingNextTime.size + " more.")
+      log.debug(t + " Received NextTime from " + sender().path.name + ". Awaiting " + awaitingNextTime.size + " more.")
       if (awaitingNextTime.isEmpty) {
         parentCoordinator ! ModelSimulator.buildNextTime(getNextTime)
-        logDebug("Become: " + t + " Received all NextTime messages.  Transitioning from receive to processingOutput.")
+        log.debug("Become: " + t + " Received all NextTime messages.  Transitioning from receive to processingOutput.")
         context.become(processingOutput)
       }
-    case m: Any=>
-      throw new SynchronizationException("Received message in recieve state with no handler: [" + m.getClass + "] " + m)
+    case m: Any =>
+      handleOtherMessages(m)
   }
 
 
@@ -355,9 +357,9 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       currentTime = t
       imminents = imminentSet.imminents
       awaitingOutputDone = imminents
-      logDebug(t + "Getting output from imminent set:")
+      log.debug(t + "Getting output from imminent set:")
       imminents.foreach { i =>
-        logDebug(i.path.name + " is in imminent set.")
+        log.debug(i.path.name + " is in imminent set.")
         i ! ModelSimulator.buildGenerateOutput(t)
       }
     }
@@ -393,7 +395,7 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       val t: Duration = Duration.parse(od.getTimeString)
       if (t.compareTo(currentTime) == 0) {
         awaitingOutputDone = awaitingOutputDone.filterNot(i => i == sender())
-        logDebug(t + " Received output done from " + sender().path.name)
+        log.debug(t + " Received output done from " + sender().path.name)
         checkDoneProcessingOutput(t)
       }
       else {
@@ -404,7 +406,7 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       val outputTime = Duration.parse(om.getTimeString)
       if (outputTime.compareTo(currentTime) == 0) {
         val outputData = convertMessage(om.getOutput, om.getJavaClass) match {case s: java.io.Serializable => s}
-        logDebug(outputTime + " Handling output event " + outputData + " from " + sender().path.name)
+        log.debug(outputTime + " Handling output event " + outputData + " from " + sender().path.name)
         routeOutputEvent(sender(), OutputEvent(outputTime, outputData))
       }
       else {
@@ -413,7 +415,7 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
 
     case OutputMessageCase(output: java.io.Serializable, t) =>
       if (t.compareTo(currentTime) == 0) {
-        logDebug(t + " Handling output event " + output + " from " + sender().path.name)
+        log.debug(t + " Handling output event " + output + " from " + sender().path.name)
         routeOutputEvent(sender(), OutputEvent(t, output))
       }
       else {
@@ -424,7 +426,7 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       val t = Duration.parse(bed.getTimeString)
       val eventIndex = bed.getEventIndex
       awaitingBagEvents = awaitingBagEvents.filterNot(a => a.actor == sender() && a.eventIndex == eventIndex)
-      logDebug(t + "Received BagEventDone with index " + eventIndex + " from " + sender().path.name)
+      log.debug(t + "Received BagEventDone with index " + eventIndex + " from " + sender().path.name)
       checkDoneProcessingOutput(t)
 
 
@@ -433,19 +435,19 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       val executionTime: Duration = Duration.parse(em.getEvent.getExecutionTimeString)
       val externalEvent = ExternalEvent(executionTime, convertMessage(em.getEvent.getEventData, em.getEvent.getJavaClass) match {case s: java.io.Serializable => s})
       externalEvents = externalEvent :: externalEvents
-      logDebug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
+      log.debug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)
 
     case EventMessageCase(event, t, eventIndex) =>
       val externalEvent = event
       externalEvents = externalEvent :: externalEvents
-      logDebug(t + " Bagging external event " + externalEvent + " with index " + eventIndex + " from " + sender().path.name)
+      log.debug(t + " Bagging external event " + externalEvent + " with index " + eventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, eventIndex)
 
     case p: ProcessEventMessages =>
       subordinates().foreach(_ ! p)
       awaitingMessageProcessing = subordinates().toList
-      logDebug(p.getTimeString + " Received ProcessEventMessages from " + sender + " Sending to " + awaitingMessageProcessing.size + " subordinates.")
+      log.debug(p.getTimeString + " Received ProcessEventMessages from " + sender + " Sending to " + awaitingMessageProcessing.size + " subordinates.")
       if(awaitingMessageProcessing.isEmpty) {
         throw new SynchronizationException("Illegal ModelCoordinator with no subordinates.")
       }
@@ -453,15 +455,15 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
     case rpm: ReadyToProcessMessages =>
       val t: Duration = Duration.parse(rpm.getTimeString)
       awaitingMessageProcessing = awaitingMessageProcessing.filterNot(_ == sender)
-      logDebug(t + " Received ReadyToProcessMessages from " + sender + ".  awaitingMessageProcessing has " + awaitingMessageProcessing.size + " members.")
+      log.debug(t + " Received ReadyToProcessMessages from " + sender + ".  awaitingMessageProcessing has " + awaitingMessageProcessing.size + " members.")
       if (awaitingMessageProcessing.isEmpty) {
         parentCoordinator ! rpm
-        logDebug(t + "Done processing messages.")
+        log.debug(t + "Done processing messages.")
         if (imminents.nonEmpty || externalEvents.nonEmpty) {
-          logDebug("Become: Transitioning from processingOutput to passingMessages.")
+          log.debug("Become: Transitioning from processingOutput to passingMessages.")
           context.become(passingMessages)
         } else {
-          logDebug("Become: NOT Transitioning from processingOutput")
+          log.debug("Become: NOT Transitioning from processingOutput")
         }
       }
 
@@ -471,24 +473,24 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       subordinates().foreach(_ ! t)
 
     case td: TerminateDone =>
-      logDebug(sender().path.name + " completed termination")
+      log.debug(sender().path.name + " completed termination")
       awaitingTermination = awaitingTermination.filterNot(_ == sender())
       if (awaitingTermination.isEmpty) {
-        logDebug("All subordinates completed termination.")
+        log.debug("All subordinates completed termination.")
         parentCoordinator ! td
       }
 
     case et: ExecuteTransition =>
       if( externalEvents.nonEmpty ) {
-        logDebug("Become: Transitioning from processingOutput to passingMessages due to external events.")
+        log.debug("Become: Transitioning from processingOutput to passingMessages due to external events.")
         context.become(passingMessages)
         self ! et
       } else {
         throw new SynchronizationException("In processingOutput, got ExecuteTransition with no external events.")
       }
 
-    case m: Any=>
-      throw new SynchronizationException("Received message from " + sender + " in processingOutput state with no handler: [" + m.getClass + "] " + m)
+    case m: Any =>
+      handleOtherMessages(m)
   }
 
   /**
@@ -507,13 +509,13 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
     case et: ExecuteTransition =>
         val t: Duration = Duration.parse(et.getTimeString)
         if (t.compareTo(currentTime) >= 0 && t.compareTo(getNextTime) <= 0) {
-          logDebug(t + " Executing external transitions.")
+          log.debug(t + " Executing external transitions.")
           // reverse takes O(n) time, but events should be delivered in FIFO
           // order (LIFO is surprising to user.  A Queue does not save time
           // as it effectively performs a reverse when elements are
           // removed, which is only performed once)
           externalEvents.reverse.foreach {e =>
-            logDebug(t + " Handling external event: " + e)
+            log.debug(t + " Handling external event: " + e)
             routeExternalEvent(e)
           }
           externalEvents = List()
@@ -530,25 +532,25 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       val executionTime: Duration = Duration.parse(em.getEvent.getExecutionTimeString)
       val externalEvent = new ExternalEvent(executionTime, convertMessage(em.getEvent.getEventData, em.getEvent.getJavaClass) match {case s: java.io.Serializable => s})
       externalEvents = externalEvent :: externalEvents
-      logDebug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
+      log.debug(t + " Bagging external event " + externalEvent + " with index " + em.getEventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, em.getEventIndex)
 
     case EventMessageCase(event, t, eventIndex) =>
       //val externalEvent = ExternalEvent(t, event)
       val externalEvent = event
       externalEvents = externalEvent :: externalEvents
-      logDebug(t + " Bagging external event " + externalEvent + " with index " + eventIndex + " from " + sender().path.name)
+      log.debug(t + " Bagging external event " + externalEvent + " with index " + eventIndex + " from " + sender().path.name)
       sender() ! ModelSimulator.buildBagEventDone(t, eventIndex)
 
     case bed: BagEventDone =>
       val t: Duration = Duration.parse(bed.getTimeString)
       val eventIndex = bed.getEventIndex
       awaitingBagEvents = awaitingBagEvents.filterNot(a => a.actor == sender()  && a.eventIndex == eventIndex)
-      logDebug(t + " Received BagEventDone with index " + eventIndex + " from " + sender().path.name)
+      log.debug(t + " Received BagEventDone with index " + eventIndex + " from " + sender().path.name)
       checkDonePassingMessages(t)
 
-    case m: Any=>
-      throw new SynchronizationException(self.path + "Received message from " + sender + " in passingMessages state with no handler: [" + m.getClass + "] " + m)
+    case m: Any =>
+      handleOtherMessages(m)
   }
 
   /**
@@ -566,23 +568,30 @@ abstract class ModelCoordinator(val initialTime: Duration, var randomActor: Acto
       val nextTime: Duration = Duration.parse(td.getNextTimeString)
       if (t.compareTo(currentTime) >= 0 && t.compareTo(nextTime) <= 0) {
         synchronizeSet = synchronizeSet.filterNot(_ == sender())
-        logDebug(t + " " + sender.path.name +  " completed transition with its next scheduled transition at " + nextTime)
+        log.debug(t + " " + sender.path.name +  " completed transition with its next scheduled transition at " + nextTime)
         nextMap.put(sender(), nextTime)
         if (synchronizeSet.isEmpty) {
           currentTime = t
           parentCoordinator ! ModelSimulator.buildStateTransitionDone(currentTime, getNextTime)
-          logDebug("Become: " + t + " All transitions complete.  Transitioning from processingTransitions to processingOutput")
+          log.debug("Become: " + t + " All transitions complete.  Transitioning from processingTransitions to processingOutput")
           context.become(processingOutput)
         } else {
-          logDebug(t + " Still have " + synchronizeSet.size + " subordinates executing transition.")
+          log.debug(t + " Still have " + synchronizeSet.size + " subordinates executing transition: " + synchronizeSet)
         }
       }
       else {
         throw new SynchronizationException(t + " in processing transitions, time in TransitionDone message " + t +
           " is not between current time: " + currentTime + " and next scheduled transition " + nextTime)
       }
+
+    case m: Any =>
+      handleOtherMessages(m)
+  }
+
+  def handleOtherMessages: Receive = {
     case m: Any=>
       throw new SynchronizationException("Received message in processingTransitions state with no handler: [" + m.getClass + "] " + m)
+
   }
 
 }

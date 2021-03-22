@@ -25,7 +25,7 @@ import java.time._
 
 object TimeUtil {
   val NANOSPERSEC = 1000000000
-  def timeToDouble(seconds: Long, nanoseconds: Int): Double = seconds + nanoseconds/NANOSPERSEC
+  def timeToDouble(seconds: Long, nanoseconds: Int): Double = seconds.toDouble + nanoseconds.toDouble/NANOSPERSEC
 
   def timeToDouble(duration: Duration): Double = timeToDouble(duration.getSeconds, duration.getNano)
 
@@ -39,8 +39,15 @@ object TimeUtil {
 
   val InfiniteTime = Duration.ofSeconds(Long.MaxValue)
 
-  val startTime = java.time.Instant.now
-  val timeUtil = new TimeUtil(startTime)
+  def setStartTime(instant: Instant) = {
+    _startTime = instant
+    timeUtil = new TimeUtil(instant)
+  }
+
+  private var  _startTime = java.time.Instant.now
+  var timeUtil = new TimeUtil(_startTime)
+
+  def startTime = _startTime
 
 }
 
@@ -51,4 +58,8 @@ class TimeUtil(val startTime: Instant) {
     timeToDouble(startTime) + timeToDouble(duration)
   }
 
+  def toEpochMillis(duration: Duration): Long = {
+    (durationToUTC(duration) * 1000.0).toLong
+  }
 }
+

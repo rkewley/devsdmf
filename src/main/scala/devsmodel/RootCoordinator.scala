@@ -52,7 +52,7 @@ abstract class RootCoordinator(val initialTime: Duration,
                                randomSeed: Long,
                                splitRandomStreamSize: Long,
                                val designPointIteration: DesignPointIteration,
-                               val simLogger: ActorRef) extends LoggingActor with UniqueNames {
+                               val simLogger: ActorRef) extends Actor with ActorLogging with UniqueNames {
 
   override val supervisorStrategy =
     OneForOneStrategy() {
@@ -98,7 +98,7 @@ abstract class RootCoordinator(val initialTime: Duration,
    */
   def terminate() = {
     preTerminate()
-    logDebug("System terminating.")
+    log.debug("System terminating.")
     //context.parent ! Terminate()
     success = 0
     simLogger ! SimLogger.buildLogTerminate(success, "Simulation Complete", currentTime)
@@ -127,13 +127,13 @@ abstract class RootCoordinator(val initialTime: Duration,
           .setSerializedRandomActor(Serialization.serializedActorPath(randomActor))
           .setSerializedSimLogger(Serialization.serializedActorPath(simLogger))
           .build()
-      logDebug("Starting simulatioin")
+      log.debug("Starting simulatioin")
 
     case nt: NextTime =>
       topCoordinator ! GenerateOutput.newBuilder().setTimeString(nt.getTimeString).build()
       simLogger ! nt
       context.become(awaitingOutputDone)
-      logDebug("Received next time of " + nt.getTimeString + " from " + sender().path.name)
+      log.debug("Received next time of " + nt.getTimeString + " from " + sender().path.name)
 
   }
 
@@ -157,14 +157,14 @@ abstract class RootCoordinator(val initialTime: Duration,
   def awaitingOutputDone: Receive = {
     case od: OutputDone =>
       val t: Duration = Duration.parse(od.getTimeString)
-      logDebug(t + " Received output done from " + sender().path.name)
+      log.debug(t + " Received output done from " + sender().path.name)
       topCoordinator ! ModelSimulator.buildProcessEventMessages(t)
 
     case rpm: ReadyToProcessMessages =>
       val t: Duration = Duration.parse(rpm.getTimeString)
       topCoordinator ! ModelSimulator.buildExecuteTransition(t)
       context.become(awaitingTransitionDone)
-      logDebug(t + " Received ReadyToProcessMessages from " + sender().path.name + ".  Executing state tranistions.")
+      log.debug(t + " Received ReadyToProcessMessages from " + sender().path.name + ".  Executing state tranistions.")
   }
 
   /**
@@ -177,16 +177,16 @@ abstract class RootCoordinator(val initialTime: Duration,
     case td: StateTransitionDone =>
       val t: Duration = Duration.parse(td.getTimeString)
       val nextTransition: Duration = Duration.parse(td.getNextTimeString)
-      logDebug(t + " " + sender().path.name + " completed state transition.")
+      log.debug(t + " " + sender().path.name + " completed state transition.")
       if (nextTransition.compareTo(TimeManager.infiniteTime) < 0 && nextTransition.compareTo(stopTime) <= 0) {
         simLogger ! ModelSimulator.buildNextTime(nextTransition)
         topCoordinator ! GenerateOutput.newBuilder().setTimeString(nextTransition.toString).build()//GenerateOutput(nextTransition)
-        logDebug(t + " Generating output")
+        log.debug(t + " Generating output")
         context.become(awaitingOutputDone)
       }
       else {
         topCoordinator ! Terminate.newBuilder().build()
-        logDebug( t + " Termination criteria have been met.")
+        log.debug( t + " Termination criteria have been met.")
       }
 
     case td: TerminateDone =>

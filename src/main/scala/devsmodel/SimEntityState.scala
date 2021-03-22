@@ -91,12 +91,16 @@ case class ImmutableSimEntityState[T <: java.io.Serializable](val stateTrajector
  *
   * @param stateTrajectory This data structure keeps track of the values of a state variable over time.  Th initial
   *                        value passed in here is usually an empty [[TreeMap]]
-  * @param name The text name of the state variable
+  * @param variableName The text name of the state variable
   * @param recordingState If false, once a new value of state is set, previous values will be dropped.  The default
   *                       value is true.  Setting to false will conserve memory, but limit traceabilility
   * @tparam T The type of the state variable
   */
-class SimEntityState[T <: java.io.Serializable](private var stateTrajectory: TreeMap[Duration, T], val name: String, var recordingState: Boolean = true) extends GetState {
+class SimEntityState[T <: java.io.Serializable](private var stateTrajectory: TreeMap[Duration, T],
+                                                val variableName: String,
+                                                var recordingState: Boolean = true,
+                                                val stateManager: ModelStateManager[_ <: java.io.Serializable]) extends GetState {
+
 
   /**
     * Method sets a new value for the state variable at a specific time
@@ -105,6 +109,7 @@ class SimEntityState[T <: java.io.Serializable](private var stateTrajectory: Tre
     * @param time The simulation time that the value is set
     */
 	def setState(newState: T, time: Duration) {
+      stateManager.logStateUpdate(newState, variableName, time)
       stateTrajectory += (time -> newState)
       if (!recordingState) dropStateBefore(time)
   }
